@@ -101,5 +101,7 @@ copied into `docs/app-store/screenshots/` as JPEGs (no alpha channel).
 | iPhone 6.9" | 1320 × 2868 | `iphone-6.9/01-table.jpg` … `05-rules.jpg` |
 | iPad 13" | 2064 × 2752 | `ipad-13/01-table.jpg` … `05-rules.jpg` |
 
-App Store Connect scales the 6.9" set down for smaller iPhones and the 13" set for smaller iPads.
+The five screens are the table, the dashboard with the edge gauge, the Lab simulator, the
+strategy chart and the rules. App Store Connect scales the 6.9" set down for smaller iPhones and
+the 13" set for smaller iPads.
 Upload them in numbered order; the first three show in search results.
