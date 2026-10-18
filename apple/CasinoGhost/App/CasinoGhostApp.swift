@@ -69,7 +69,9 @@ struct TableScreen: View {
     var body: some View {
         NavigationStack {
             GeometryReader { geo in
-                let wide = hsize == .regular && geo.size.width > 900
+                // side by side only when the felt keeps its natural width (about 600 pt) beside
+                // the dashboard: iPad in landscape; portrait stacks them
+                let wide = hsize == .regular && geo.size.width >= 1060
                 ScrollViewReader { proxy in
                     ScrollView {
                         if wide {
