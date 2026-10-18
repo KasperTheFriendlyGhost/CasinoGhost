@@ -53,8 +53,9 @@ pub enum CellKind {
     Pair,
 }
 
+/// Which published Hi-Lo plays to use.
 #[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum IndexSet {
+pub enum PublishedIndices {
     NoIndices,
     InsuranceOnly,
     I18,
@@ -455,13 +456,13 @@ impl From<&IndexEntry> for IndexPlay {
     }
 }
 
-fn index_set_in(s: IndexSet) -> CIndexSet {
+fn index_set_in(s: PublishedIndices) -> CIndexSet {
     match s {
-        IndexSet::NoIndices => CIndexSet::None,
-        IndexSet::InsuranceOnly => CIndexSet::InsuranceOnly,
-        IndexSet::I18 => CIndexSet::I18,
-        IndexSet::I18Fab4 => CIndexSet::I18Fab4,
-        IndexSet::Full => CIndexSet::Full,
+        PublishedIndices::NoIndices => CIndexSet::None,
+        PublishedIndices::InsuranceOnly => CIndexSet::InsuranceOnly,
+        PublishedIndices::I18 => CIndexSet::I18,
+        PublishedIndices::I18Fab4 => CIndexSet::I18Fab4,
+        PublishedIndices::Full => CIndexSet::Full,
     }
 }
 
@@ -515,7 +516,7 @@ pub fn house_edge(rules: GameRules) -> f64 {
 
 /// The published Hi-Lo plays that apply under these rules for a chosen set.
 #[uniffi::export]
-pub fn published_indices(rules: GameRules, set: IndexSet) -> Vec<IndexEntry> {
+pub fn published_indices(rules: GameRules, set: PublishedIndices) -> Vec<IndexEntry> {
     let r: Rules = (&rules).into();
     let s = strategy::basic_strategy(&r);
     strategy::applicable(&strategy::published_hilo(), &r, &s, index_set_in(set)).iter().map(Into::into).collect()
@@ -1296,10 +1297,10 @@ pub struct TableState {
 
 #[derive(uniffi::Enum, Clone, Debug)]
 pub enum TableEvent {
-    Shuffle,
-    Card { seat: Seat, hand: u8, card: PlayingCard, face_up: bool },
+    Shuffle { running_count: f64, count: f64 },
+    Card { seat: Seat, hand: u8, card: PlayingCard, face_up: bool, running_count: f64, count: f64, cards_left: u32 },
     Split { seat: Seat, hand: u8 },
-    HoleRevealed { card: PlayingCard },
+    HoleRevealed { card: PlayingCard, running_count: f64, count: f64 },
     Settled { net: f64 },
 }
 
@@ -1341,9 +1342,14 @@ pub struct TableGame {
 #[uniffi::export]
 impl TableGame {
     /// A new table; `session` is a JSON snapshot from `snapshot()` to continue a session.
+    /// `seed` makes the shuffle reproducible (for demos and tests).
     #[uniffi::constructor]
-    pub fn new(config: TableConfig, session: Option<String>, bankroll: f64) -> Arc<Self> {
-        let mut g = Game::new(settings_from(&config), Rng::from_entropy());
+    pub fn new(config: TableConfig, session: Option<String>, bankroll: f64, seed: Option<u64>) -> Arc<Self> {
+        let rng = match seed {
+            Some(s) => Rng::new(s),
+            None => Rng::from_entropy(),
+        };
+        let mut g = Game::new(settings_from(&config), rng);
         g.bankroll = bankroll;
         if let Some(s) = session.and_then(|s| serde_json::from_str::<game::Snapshot>(&s).ok()) {
             g.restore(&s);
@@ -1427,10 +1433,12 @@ impl TableGame {
             .take_events()
             .into_iter()
             .map(|e| match e {
-                game::Event::Shuffle => TableEvent::Shuffle,
-                game::Event::Card { seat, hand, card, face_up } => TableEvent::Card { seat: seat_out(seat), hand, card: card.into(), face_up },
+                game::Event::Shuffle { running_count, count } => TableEvent::Shuffle { running_count, count },
+                game::Event::Card { seat, hand, card, face_up, running_count, count, cards_left } => {
+                    TableEvent::Card { seat: seat_out(seat), hand, card: card.into(), face_up, running_count, count, cards_left }
+                }
                 game::Event::Split { seat, hand } => TableEvent::Split { seat: seat_out(seat), hand },
-                game::Event::HoleRevealed { card } => TableEvent::HoleRevealed { card: card.into() },
+                game::Event::HoleRevealed { card, running_count, count } => TableEvent::HoleRevealed { card: card.into(), running_count, count },
                 game::Event::Settled { net } => TableEvent::Settled { net },
             })
             .collect()

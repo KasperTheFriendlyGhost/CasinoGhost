@@ -27,7 +27,7 @@ final class EngineBridgeTests: XCTestCase {
             rules: defaultRules(), count: hilo, trueCount: defaultTrueCountRule(),
             plays: publishedIndices(rules: defaultRules(), set: .i18), insuranceIndex: hiloInsuranceIndex(),
             useIndices: true, pays: sideBets().map { $0.presets[0].pays }, minBet: 5, maxBet: 500, bots: 1)
-        let table = TableGame(config: config, session: nil, bankroll: 1000)
+        let table = TableGame(config: config, session: nil, bankroll: 1000, seed: 7)
         XCTAssertTrue(table.deal())
         var guardCount = 0
         while true {
@@ -43,7 +43,7 @@ final class EngineBridgeTests: XCTestCase {
         XCTAssertFalse(table.takeEvents().isEmpty)
         XCTAssertEqual(s.stats.correct, s.stats.decisions)
         // the session round-trips
-        let again = TableGame(config: config, session: table.snapshot(), bankroll: 0)
+        let again = TableGame(config: config, session: table.snapshot(), bankroll: 0, seed: nil)
         XCTAssertEqual(again.state().bankroll, s.bankroll, accuracy: 1e-9)
         XCTAssertEqual(again.state().dealt, s.dealt)
     }

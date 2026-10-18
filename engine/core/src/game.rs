@@ -42,11 +42,13 @@ pub enum Seat {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Event {
-    Shuffle,
-    Card { seat: Seat, hand: u8, card: Card, face_up: bool },
+    /// The shoe was shuffled; counts restart (values after the shuffle).
+    Shuffle { running_count: f64, count: f64 },
+    /// A card was dealt. The counts and cards left are as they stand after this card.
+    Card { seat: Seat, hand: u8, card: Card, face_up: bool, running_count: f64, count: f64, cards_left: u32 },
     /// A hand was split into two; the second hand takes the second card.
     Split { seat: Seat, hand: u8 },
-    HoleRevealed { card: Card },
+    HoleRevealed { card: Card, running_count: f64, count: f64 },
     Settled { net: f64 },
 }
 
@@ -530,7 +532,8 @@ impl Game {
         self.hands.clear();
         self.bots.clear();
         self.side_results.clear();
-        self.events.push(Event::Shuffle);
+        let (running_count, count) = (self.running_count(), self.count());
+        self.events.push(Event::Shuffle { running_count, count });
     }
 
     fn see(&mut self, c: Card) -> Card {
@@ -542,7 +545,8 @@ impl Game {
         if face_up {
             self.see(c);
         }
-        self.events.push(Event::Card { seat, hand, card: c, face_up });
+        let (running_count, count, cards_left) = (self.running_count(), self.count(), self.shoe.cards_left() as u32);
+        self.events.push(Event::Card { seat, hand, card: c, face_up, running_count, count, cards_left });
         c
     }
 
@@ -833,7 +837,8 @@ impl Game {
             self.hole_revealed = true;
             let hole = self.dealer[1];
             self.see(hole);
-            self.events.push(Event::HoleRevealed { card: hole });
+            let (running_count, count) = (self.running_count(), self.count());
+            self.events.push(Event::HoleRevealed { card: hole, running_count, count });
         }
         let dealer_bj = self.dealer_has_bj();
         let live = self.hands.iter().chain(self.bots.iter().flatten()).any(|h| !h.surrendered && !h.busted() && !h.is_natural());
@@ -1045,11 +1050,11 @@ mod tests {
                 autoplay(&mut g, 1);
                 for e in g.take_events() {
                     match e {
-                        Event::Shuffle => {
+                        Event::Shuffle { .. } => {
                             seen_tags = 0;
                             last_shuffles += 1;
                         }
-                        Event::Card { card, face_up: true, .. } | Event::HoleRevealed { card } => seen_tags += g.settings.count.tag2(card.card_type()),
+                        Event::Card { card, face_up: true, .. } | Event::HoleRevealed { card, .. } => seen_tags += g.settings.count.tag2(card.card_type()),
                         _ => {}
                     }
                 }
