@@ -33,10 +33,10 @@ export function App() {
 
   return (
     <div className="flex min-h-full flex-col">
-      <header className="sticky z-30 border-b border-line bg-panel/90 backdrop-blur" style={{ top: 'env(safe-area-inset-top, 0px)' }}>
-        <div className="gutter mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-6 gap-y-2 py-2.5">
+      <header className="relative z-30 border-b border-line bg-panel/90 backdrop-blur sm:sticky" style={{ top: 'env(safe-area-inset-top, 0px)' }}>
+        <div className="gutter mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-6 gap-y-1.5 py-2 sm:py-2.5">
           <button onClick={() => go('play')} className="flex items-baseline gap-2" aria-label="CasinoGhost home">
-            <span className="font-display text-[26px] font-extrabold uppercase leading-none tracking-[0.06em]"><span className="text-fg">Casino</span><span className="text-brass">Ghost</span></span>
+            <span className="font-display text-[22px] font-extrabold uppercase leading-none tracking-[0.06em] sm:text-[26px]"><span className="text-fg">Casino</span><span className="text-brass">Ghost</span></span>
             <span className="hidden text-xs font-medium text-muted sm:inline">blackjack trainer &amp; lab</span>
           </button>
           <nav className="order-3 -mx-1 flex w-full gap-1 overflow-x-auto sm:order-none sm:mx-0 sm:w-auto" aria-label="Sections">

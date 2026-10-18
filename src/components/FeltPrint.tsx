@@ -10,7 +10,7 @@ export function FeltPrint({ rules }: { rules: Rules }) {
   const mid = rules.h17 ? 'DEALER MUST HIT SOFT 17' : 'DEALER MUST STAND ON ALL 17s';
   const low = rules.peek ? 'INSURANCE PAYS 2 TO 1' : 'NO HOLE CARD · INSURANCE PAYS 2 TO 1';
   return (
-    <div className="pointer-events-none mx-auto -mt-1 w-[min(92%,600px)] select-none" aria-label={`${top}. ${mid}. ${low}.`}>
+    <div className="pointer-events-none mx-auto -mt-1 w-[min(84%,600px)] select-none sm:w-[min(92%,600px)]" aria-label={`${top}. ${mid}. ${low}.`}>
       <svg viewBox="0 0 600 150" className="block w-full" aria-hidden>
         <defs>
           <path id="arc1" d="M 40 30 Q 300 120 560 30" />

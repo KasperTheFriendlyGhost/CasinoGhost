@@ -156,13 +156,17 @@ export function Play({ settings }: { settings: AppSettings }) {
     <div className={cx('grid items-start gap-4', grid)}>
       <section className="min-w-0 flex flex-col gap-3">
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-2">
-          <ToolButton onClick={() => setCustomizing(true)}><LayoutDashboard size={15} aria-hidden /> Customize dashboard</ToolButton>
-          <ToolButton onClick={() => (game.paused ? game.resume() : game.pause())} pressed={game.paused}>
-            {game.paused ? <><PlayIcon size={15} aria-hidden /> Resume</> : <><Pause size={15} aria-hidden /> Pause</>}
+        <div className="flex items-center gap-2 sm:flex-wrap">
+          <ToolButton label="Customize dashboard" onClick={() => setCustomizing(true)}><LayoutDashboard size={15} aria-hidden /><span className="hidden sm:inline">Customize dashboard</span></ToolButton>
+          <ToolButton label={game.paused ? 'Resume' : 'Pause'} onClick={() => (game.paused ? game.resume() : game.pause())} pressed={game.paused}>
+            {game.paused ? <><PlayIcon size={15} aria-hidden /><span className="hidden sm:inline">Resume</span></> : <><Pause size={15} aria-hidden /><span className="hidden sm:inline">Pause</span></>}
           </ToolButton>
-          <ToolButton onClick={() => game.newShoe()} disabled={!canBet}><Shuffle size={15} aria-hidden /> New shoe</ToolButton>
-          <div className="ml-auto flex items-center gap-1 rounded-full border border-line bg-panel p-0.5 text-xs font-semibold" role="radiogroup" aria-label="Deal speed">
+          <ToolButton label="New shoe" onClick={() => game.newShoe()} disabled={!canBet}><Shuffle size={15} aria-hidden /><span className="hidden sm:inline">New shoe</span></ToolButton>
+          <button className="ml-auto rounded-full border border-line bg-panel px-3 py-2 text-xs font-semibold capitalize text-fg-2 sm:hidden" aria-label={`Speed: ${dash.speed}. Tap to change.`}
+            onClick={() => { const order = ['slow', 'normal', 'fast', 'instant'] as const; updateDash({ speed: order[(order.indexOf(dash.speed) + 1) % order.length] }); }}>
+            Speed: <span className="text-fg">{dash.speed}</span>
+          </button>
+          <div className="ml-auto hidden items-center gap-1 rounded-full border border-line bg-panel p-0.5 text-xs font-semibold sm:flex" role="radiogroup" aria-label="Deal speed">
             {(['slow', 'normal', 'fast', 'instant'] as const).map((sp) => (
               <button key={sp} role="radio" aria-checked={dash.speed === sp} onClick={(e) => { updateDash({ speed: sp }); if (e.detail) e.currentTarget.blur(); }}
                 className={cx('rounded-full px-2.5 py-1 capitalize', dash.speed === sp ? 'bg-brass text-brass-ink' : 'text-fg-2 hover:text-fg')}>{sp}</button>
@@ -171,13 +175,13 @@ export function Play({ settings }: { settings: AppSettings }) {
         </div>
         {/* Table */}
         <div className="rail relative rounded-[28px] p-[10px] pb-[46px] sm:p-[14px] sm:pb-[52px]" style={{ ['--card-w' as string]: 'clamp(50px, 8.4vw, 88px)', ['--card-w-sm' as string]: 'clamp(42px, 6.4vw, 70px)' }}>
-          <div className="felt felt-shape relative flex min-h-[420px] flex-col overflow-hidden rounded-[20px] sm:min-h-[500px]">
-            <div className="absolute right-3 top-3 z-10 sm:right-4 sm:top-4">
+          <div className="felt felt-shape relative flex min-h-[380px] flex-col overflow-hidden rounded-[20px] sm:min-h-[500px]">
+            <div className="absolute right-2 top-2 z-10 origin-top-right scale-[0.72] sm:right-4 sm:top-4 sm:scale-100">
               <DealingShoe left={game.shoe.cardsLeft} size={game.shoe.size} cut={game.shoe.cut} decks={R.decks} showNumbers={dash.deckNumbers} />
             </div>
             <TableCorner game={game} showCount={dash.pinCount && !hideCount} trayMarks={dash.trayMarks} onTray={focusDeckGuess} />
             {/* Dealer */}
-            <div className="flex flex-col items-center gap-2 pt-[124px] sm:pt-5">
+            <div className="flex flex-col items-center gap-2 pt-[94px] sm:pt-5">
               <div className="flex min-h-[calc(var(--card-w)*1.4)] items-start">
                 {game.dealer.map((c, i) => (
                   <div key={c.uid} style={{ marginLeft: i ? 'calc(var(--card-w) * -0.32)' : 0 }}>
@@ -198,7 +202,7 @@ export function Play({ settings }: { settings: AppSettings }) {
             </div>
 
             {/* Betting spots */}
-            <div className="flex items-end justify-center gap-2 pb-9 pt-6 sm:gap-5 sm:pb-12">
+            <div className="flex items-end justify-center gap-2 pb-7 pt-4 sm:gap-5 sm:pb-12 sm:pt-6">
               {SIDE_IDS.slice(0, 2).map((id) => (
                 <SideSpot key={id} id={id} game={game} selected={canBet && spot === id} onSelect={() => setSpot(id)} />
               ))}
@@ -211,8 +215,8 @@ export function Play({ settings }: { settings: AppSettings }) {
         </div>
 
         {/* Controls */}
-        <div className="panel flex flex-col gap-3 p-3 sm:p-4" style={{ boxShadow: 'var(--shadow)' }}>
-          <div className="flex min-h-[30px] items-center" aria-live="polite">
+        <div className="panel sticky bottom-0 z-20 flex flex-col gap-2 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:static sm:gap-3 sm:p-4" style={{ boxShadow: 'var(--shadow)' }}>
+          <div className="flex min-h-[30px] items-center gap-2" aria-live="polite">
             <AnimatePresence mode="wait">
               {hint ? (
                 <Toast key="hint" tone="hint">{hint}</Toast>
@@ -225,11 +229,16 @@ export function Play({ settings }: { settings: AppSettings }) {
                   )}
                 </Toast>
               ) : (
-                <motion.p key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-muted">
+                <motion.p key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-muted max-sm:line-clamp-1">
                   {phase === 'player' ? 'Your move. Every decision is graded against the correct play for this count.' : phase === 'insurance' ? 'Insurance is only worth it at a true count of +3 or more.' : 'Tap a betting spot, add chips, then deal.'}
                 </motion.p>
               )}
             </AnimatePresence>
+            {phase === 'player' && (
+              <button onClick={showHint} className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-sm text-fg-2 hover:bg-panel-2 sm:hidden" aria-label="Hint: show the correct play">
+                <Lightbulb size={16} aria-hidden /> Hint
+              </button>
+            )}
           </div>
           {phase === 'insurance' ? (
             <div className="flex flex-wrap items-center gap-3">
@@ -238,36 +247,35 @@ export function Play({ settings }: { settings: AppSettings }) {
               <Btn primary onClick={() => game.takeInsurance(false)} kbd="N">No insurance</Btn>
             </div>
           ) : phase === 'player' ? (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="grid grid-cols-5 gap-1.5 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
               {ACTIONS.map((a) => {
                 const ok = !!legal && (a.code === ACT.HIT ? legal.hit : a.code === ACT.STAND ? legal.stand : a.code === ACT.DOUBLE ? legal.double : a.code === ACT.SPLIT ? legal.split : legal.surrender);
-                return <Btn key={a.key} primary={a.code === ACT.STAND || a.code === ACT.HIT} disabled={!ok} onClick={() => act(a.code)} kbd={a.key}>{a.label}</Btn>;
+                return (
+                  <Btn key={a.key} primary={a.code === ACT.STAND || a.code === ACT.HIT} disabled={!ok} onClick={() => act(a.code)} kbd={a.key} className="justify-center max-sm:px-1 max-sm:py-3 max-sm:text-[13px]">
+                    {a.code === ACT.SURRENDER ? <><span className="sm:hidden">Surr.</span><span className="hidden sm:inline">Surrender</span></> : a.label}
+                  </Btn>
+                );
               })}
-              <button onClick={showHint} className="ml-auto inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm text-fg-2 hover:bg-panel-2" title="Show the correct play (?)">
+              <button onClick={showHint} className="ml-auto hidden items-center gap-1.5 rounded-full px-3 py-2 text-sm text-fg-2 hover:bg-panel-2 sm:inline-flex" title="Show the correct play (?)">
                 <Lightbulb size={16} aria-hidden /> Hint
               </button>
             </div>
           ) : (
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2" role="group" aria-label="Chips">
-                {CHIPS.map((c) => (
-                  <button key={c.v} data-bet-control="1" onClick={() => setStake(spot, stakeOf(spot) + c.v)}
-                    onContextMenu={(e) => { e.preventDefault(); setStake(spot, Math.max(0, stakeOf(spot) - c.v)); }}
-                    title={`Add $${c.v} (key ${CHIPS.indexOf(c) + 1}). Right-click or Shift+${CHIPS.indexOf(c) + 1} removes it.`}
-                    className="chip relative grid place-items-center rounded-full font-display text-[15px] font-extrabold text-white transition-transform hover:-translate-y-0.5 active:translate-y-0" style={{ width: 46, height: 46, background: `radial-gradient(circle at 50% 50%, ${c.bg} 0 52%, transparent 53%), repeating-conic-gradient(${c.edge} 0 15deg, ${c.bg} 15deg 30deg)`, boxShadow: '0 3px 0 rgba(0,0,0,0.35), inset 0 0 0 2px rgba(0,0,0,0.25)' }} aria-label={`Add $${c.v} to ${spotName(spot)}`}>
-                    {c.v}
-                    <kbd className="absolute -bottom-1.5 -right-1 hidden rounded bg-panel px-1 font-data text-[9px] font-bold text-fg-2 ring-1 ring-line-strong sm:block">{CHIPS.indexOf(c) + 1}</kbd>
-                  </button>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <div className="order-1 flex items-center gap-2 sm:order-none" role="group" aria-label="Chips">
+                {CHIPS.map((c, i) => (
+                  <ChipButton key={c.v} chip={c} n={i + 1} target={spotName(spot)}
+                    onAdd={() => setStake(spot, stakeOf(spot) + c.v)} onRemove={() => setStake(spot, Math.max(0, stakeOf(spot) - c.v))} />
                 ))}
               </div>
-              <div className="text-sm leading-tight">
+              <div className="order-3 text-sm leading-tight sm:order-none">
                 <div className="label">Betting on</div>
                 <div className="font-semibold">{spotName(spot)} · {money(stakeOf(spot))}</div>
               </div>
-              <button data-bet-control="1" onClick={() => setStake(spot, 0)} className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm text-fg-2 hover:bg-panel-2" title="Clear this spot (Backspace)"><RotateCcw size={15} aria-hidden /> Clear</button>
-              <button data-bet-control="1" onClick={() => { game.setBet(0); for (const id of SIDE_IDS) game.setSideStake(id, 0); }} className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm text-fg-2 hover:bg-panel-2" title="Clear every bet (X)"><X size={15} aria-hidden /> Clear all</button>
-              {game.mainBet > 0 && game.mainBet < game.limits.min && <span className="text-sm font-semibold text-bad">Table minimum is {money(game.limits.min)}</span>}
-              <Btn primary big className="ml-auto" disabled={game.mainBet <= 0 || game.mainBet < game.limits.min} onClick={deal} kbd="Space">{phase === 'settled' ? 'Deal again' : 'Deal'}</Btn>
+              <button data-bet-control="1" onClick={() => setStake(spot, 0)} className="order-4 inline-flex items-center sm:order-none gap-1 rounded-full px-3 py-2 text-sm text-fg-2 hover:bg-panel-2" title="Clear this spot (Backspace)"><RotateCcw size={15} aria-hidden /> Clear</button>
+              <button data-bet-control="1" onClick={() => { game.setBet(0); for (const id of SIDE_IDS) game.setSideStake(id, 0); }} className="order-5 inline-flex items-center sm:order-none gap-1 rounded-full px-3 py-2 text-sm text-fg-2 hover:bg-panel-2" title="Clear every bet (X)"><X size={15} aria-hidden /> Clear all</button>
+              {game.mainBet > 0 && game.mainBet < game.limits.min && <span className="order-6 text-sm font-semibold text-bad sm:order-none">Table minimum is {money(game.limits.min)}</span>}
+              <Btn primary big className="order-2 ml-auto max-sm:px-5 sm:order-none" disabled={game.mainBet <= 0 || game.mainBet < game.limits.min} onClick={deal} kbd="Space">{phase === 'settled' ? 'Deal again' : 'Deal'}</Btn>
               <KeyLegend />
             </div>
           )}
@@ -290,10 +298,35 @@ export function Play({ settings }: { settings: AppSettings }) {
   );
 }
 
-function ToolButton({ children, onClick, pressed, disabled }: { children: React.ReactNode; onClick: () => void; pressed?: boolean; disabled?: boolean }) {
+/** A chip: tap or click adds it; long-press, right-click or Shift+number removes it. */
+function ChipButton({ chip, n, target, onAdd, onRemove }: { chip: (typeof CHIPS)[number]; n: number; target: string; onAdd: () => void; onRemove: () => void }) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressed = useRef(false);
+  const cancel = () => { if (timer.current) clearTimeout(timer.current); timer.current = null; };
   return (
-    <button onClick={(e) => { onClick(); if (e.detail) e.currentTarget.blur(); }} disabled={disabled} aria-pressed={pressed}
-      className={cx('inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40',
+    <button data-bet-control="1"
+      onClick={() => { if (longPressed.current) { longPressed.current = false; return; } onAdd(); }}
+      onContextMenu={(e) => { e.preventDefault(); if (!longPressed.current) onRemove(); }}
+      onPointerDown={(e) => {
+        if (e.pointerType !== 'touch') return;
+        longPressed.current = false;
+        timer.current = setTimeout(() => { longPressed.current = true; onRemove(); navigator.vibrate?.(15); }, 450);
+      }}
+      onPointerUp={cancel} onPointerLeave={cancel} onPointerCancel={cancel}
+      title={`Add $${chip.v} (key ${n}). Long-press, right-click or Shift+${n} removes it.`}
+      className="chip relative grid size-[42px] place-items-center rounded-full font-display text-[14px] font-extrabold text-white transition-transform hover:-translate-y-0.5 active:translate-y-0 sm:size-[46px] sm:text-[15px]"
+      style={{ background: `radial-gradient(circle at 50% 50%, ${chip.bg} 0 52%, transparent 53%), repeating-conic-gradient(${chip.edge} 0 15deg, ${chip.bg} 15deg 30deg)`, boxShadow: '0 3px 0 rgba(0,0,0,0.35), inset 0 0 0 2px rgba(0,0,0,0.25)' }}
+      aria-label={`Add $${chip.v} to ${target}`}>
+      {chip.v}
+      <kbd className="absolute -bottom-1.5 -right-1 hidden rounded bg-panel px-1 font-data text-[9px] font-bold text-fg-2 ring-1 ring-line-strong sm:block">{n}</kbd>
+    </button>
+  );
+}
+
+function ToolButton({ children, onClick, pressed, disabled, label }: { children: React.ReactNode; onClick: () => void; pressed?: boolean; disabled?: boolean; label: string }) {
+  return (
+    <button onClick={(e) => { onClick(); if (e.detail) e.currentTarget.blur(); }} disabled={disabled} aria-pressed={pressed} aria-label={label} title={label}
+      className={cx('inline-flex items-center gap-1.5 rounded-full border px-3 py-2 sm:py-1.5 text-sm font-semibold transition-colors disabled:opacity-40',
         pressed ? 'border-brass bg-brass-soft text-fg' : 'border-line bg-panel text-fg-2 hover:border-brass hover:text-fg')}>
       {children}
     </button>
@@ -304,7 +337,7 @@ function ToolButton({ children, onClick, pressed, disabled }: { children: React.
 function TableCorner({ game, showCount, trayMarks, onTray }: { game: Game; showCount: boolean; trayMarks: boolean; onTray: () => void }) {
   const { min, max } = game.limits;
   return (
-    <div className="absolute left-3 top-3 z-10 flex items-start gap-3 sm:left-4 sm:top-4">
+    <div className="absolute left-2 top-2 z-10 flex origin-top-left scale-[0.8] items-start gap-3 sm:left-4 sm:top-4 sm:scale-100">
     <div className="flex flex-col items-start gap-2">
       <div className="rounded-md bg-[#f4efe2] px-2.5 py-1 text-center leading-none text-[#1b1a16] shadow-[0_3px_0_rgba(0,0,0,0.35)]">
         <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#6b5a2e]">Limits</div>
