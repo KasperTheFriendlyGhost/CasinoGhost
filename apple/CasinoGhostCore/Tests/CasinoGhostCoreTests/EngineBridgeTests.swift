@@ -68,7 +68,8 @@ final class EngineBridgeTests: XCTestCase {
             plays: publishedIndices(rules: defaultRules(), set: .i18Fab4), insuranceIndex: hiloInsuranceIndex(),
             rounds: 1_000_000, seed: 2)
         let curve = buildEdgeCurve(setup: setup, spreadPerCount: 8, progress: ProgressHandle())
-        XCTAssertEqual(curve.coefficients.count, 4)
+        // a cubic, or a quadratic or line if noise would make the cubic dip
+        XCTAssertTrue((2...4).contains(curve.coefficients.count))
         XCTAssertLessThan(curveEdge(curve: curve, count: -2), curveEdge(curve: curve, count: 0))
         XCTAssertLessThan(curveEdge(curve: curve, count: 0), curveEdge(curve: curve, count: 3))
         XCTAssertEqual(curveEdge(curve: curve, count: curve.breakEven), 0, accuracy: 1e-9)

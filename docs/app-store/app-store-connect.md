@@ -9,16 +9,21 @@ changes (analytics, accounts, purchases, online features), revisit every section
 
 The label will read **Data Not Collected**. This is accurate because:
 
-- The app makes no network requests of its own. Fonts, card art and code are all in the bundle.
+- The app makes no network requests of its own. Card art, sounds and the engine are all in the
+  bundle, and every calculation runs on the device.
 - There is no analytics, crash-reporting, advertising or account SDK.
-- Settings and the saved session stay on the device (UserDefaults via `@capacitor/preferences`,
-  plus WebView local storage). Apple does not count data that never leaves the device as
-  "collected".
-- Links to outside sites (help lines, credits, privacy policy) open in an in-app Safari sheet,
-  which is governed by those sites and by Safari, not by the app.
+- Settings stay on the device in UserDefaults. The saved session and cached analysis are stored
+  as files in the app's Application Support folder. Apple does not count data that never leaves
+  the device as "collected".
+- Links to outside sites (help lines, privacy policy, support) open in Safari, which is governed
+  by those sites and by Safari, not by the app.
 
-The privacy manifest `ios/App/App/PrivacyInfo.xcprivacy` says the same thing: no tracking, no
-collected data types, and UserDefaults accessed for the app's own settings (reason `CA92.1`).
+The privacy manifest `apple/CasinoGhost/PrivacyInfo.xcprivacy` says the same thing:
+
+- no tracking;
+- no collected data types;
+- UserDefaults accessed for the app's own settings (reason `CA92.1`);
+- the system clock used to time events inside the app (reason `35F9.1`).
 
 **Tracking → No.** There is no App Tracking Transparency prompt, because nothing tracks.
 
@@ -58,13 +63,13 @@ App Review will.
 CasinoGhost is a blackjack training tool. No real money is involved: there are no purchases, no deposits, no prizes, no ads and no accounts. The bankroll is a practice number that can be reset in Settings.
 
 How to try it:
-1. Table tab: tap a chip to bet, then Deal. Choose Hit, Stand, Double, Split or Surrender; every decision is graded, and "Hint" shows the correct play. The live shoe (top right) empties and the discard tray (top left) fills as cards are played.
-2. Scroll down on the Table tab for the dashboard: count, gauges, deck-estimation drill and statistics. The grid button above the table customises it.
-3. Lab tab: exact odds for the side bets 21+3, Perfect Pairs and Lucky Ladies. Enter any paytable.
-4. Strategy and Rules tabs: change a rule (for example decks or soft 17) and the strategy chart is recomputed.
-5. Settings: sound, haptics, appearance, reset and erase data, responsible-gambling resources, privacy policy.
+1. Table tab: tap a chip to bet, then Deal. Choose Hit, Stand, Double, Split or Surrender. Every decision is graded, and the lightbulb shows the correct play. The shoe empties and the discard tray fills as cards are played.
+2. Scroll down on the Table tab for the dashboard: the edge gauge (your edge at the current count, from a simulation of your exact game), counts, accuracy, the cost of errors, side-bet edges and session charts. On iPad in landscape the dashboard sits beside the table.
+3. Lab tab: simulate any game, evaluate or optimise a bet spread (win rate, risk of ruin), generate index plays for any count, and analyse side bets for any paytable. A simulation takes a few seconds.
+4. Strategy and Rules tabs: change a rule (for example decks or soft 17) and the strategy chart and house edge are recomputed. Rules can also be typed as shorthand, such as "6D H17 DAS LS".
+5. Settings: dealing speed, sound, haptics, appearance, reset and erase data, responsible-gambling resources, privacy policy.
 
-The app is fully offline and native-integrated: haptic feedback (UIImpactFeedbackGenerator via Capacitor Haptics), native persistent storage (UserDefaults), status bar styling that follows the theme, an in-app Safari sheet for links, a launch screen, and session save/restore including the shoe in play. It supports iPhone (portrait) and iPad (all orientations), light and dark mode, and hardware keyboards on iPad.
+The app is native SwiftUI with its maths engine compiled in, and works fully offline. It has haptic feedback, table sounds, a launch screen, and saves the session after every round, including the shoe in play. It supports iPhone (portrait) and iPad (all orientations, Split View), light and dark mode, and hardware keyboards on iPad.
 
 It is rated for simulated gambling and includes help-line links (NCPG, BeGambleAware) in Settings.
 ```

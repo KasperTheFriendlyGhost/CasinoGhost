@@ -11,14 +11,23 @@
 	<array/>
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
-		<!-- @capacitor/preferences keeps settings and the saved session in UserDefaults,
-		     read and written only by this app (reason CA92.1). -->
+		<!-- Settings are kept in UserDefaults, read and written only by this app (CA92.1). -->
 		<dict>
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
 				<string>CA92.1</string>
+			</array>
+		</dict>
+		<!-- The engine's monotonic clock times the session and simulations: elapsed time
+		     between events inside the app, never sent anywhere (35F9.1). -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>35F9.1</string>
 			</array>
 		</dict>
 	</array>

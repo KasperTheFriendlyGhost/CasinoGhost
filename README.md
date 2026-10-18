@@ -1,9 +1,69 @@
 # CasinoGhost
 
-A modern blackjack trainer and advantage-play lab: basic strategy, Hi-Lo card counting with
-index plays, and exact, countable side bets (21+3, Perfect Pairs, Lucky Ladies).
+A blackjack trainer and advantage-play lab. It covers basic strategy for any rules, eight
+counting systems with index plays, exact edge and risk analysis, and countable side bets (21+3,
+Perfect Pairs, Lucky Ladies).
 
-## What's in it
+CasinoGhost comes in two forms:
+
+- **The iPhone and iPad app** (`apple/`): native SwiftUI on a Rust engine (`engine/`). This is
+  the flagship.
+- **A web version** (`src/`) for desktop browsers, which can be installed as an app or run from a
+  single HTML file.
+
+## The iPhone and iPad app
+
+| Screen | What it does |
+|---|---|
+| **Table** | A dealer deals each card out of a shoe into a discard tray that fills to scale, so you can estimate decks by eye. Other players at the table take cards you have to count. Every decision is graded against basic strategy for your rules plus the index plays you've chosen, and each mistake is priced in dollars from the cards actually left. It has hand signals (tap to hit, swipe to stand), keyboard shortcuts on iPad, haptics and table sounds. The session, including the shoe in play, is saved after every round. |
+| **Edge gauge** | Your edge at your count, from 10 million simulated rounds of your exact game, smoothed into one curve. The band shows the 10th–90th percentile of the true edge of real shoes at that count. An optional marker gives the exact edge of the cards left. Below the dial is your game's whole curve, with the break-even count and how often each count comes up. |
+| **Dashboard** | Counts (which can be hidden for practice), accuracy by hand type, the cost of errors, side-bet edges from the current shoe, bankroll against expectation with a luck measure, session statistics and a decision log. |
+| **Lab** | **Simulator:** any rules, count, true-count convention and index set, with the edge and frequency at every count. **Bet plans:** win rate, SD, risk of ruin (lifetime and trip), N0, DI, SCORE and the bankroll for a target risk, plus an optimiser that finds the best ramp within your limits. **Index generator:** indices for your exact rules, count and rounding, compared with the published ones. **Side bets:** exact odds for any paytable, effects of removal, a derived count and a simulation of counting it. |
+| **Strategy** | The basic-strategy chart solved for the current rules, the house edge with perfect play, and the index plays in use. |
+| **Rules** | Presets with a verdict on each table; every rule as a control (1–8 decks, H17/S17, 3:2 to 6:5, doubling, DAS, splitting to 2–4 hands, RSA, hitting split aces, late or early surrender, peek or no hole card, penetration or a CSM); table conditions; and a box that reads rules typed as shorthand or plain English. Also the count system (Hi-Lo, KO, Red 7, Hi-Opt I and II, Omega II, Zen, Wong Halves), true-count rounding and deck estimation, and the index set. |
+
+How every number is computed and checked is in [docs/ENGINE.md](docs/ENGINE.md).
+
+### Build it
+
+You need a Mac with Xcode 26 and [Rust](https://rustup.rs).
+
+```bash
+scripts/build-core-apple.sh          # Rust engine → XCFramework + Swift bindings (skips if unchanged)
+open apple/CasinoGhost.xcodeproj     # the scheme also runs the script before each build
+cd engine && cargo test --release    # engine tests (any platform)
+```
+
+The **Apple** workflow runs on every push:
+
+1. the engine tests on Linux;
+2. the engine build for iOS, the simulator and macOS;
+3. the Swift package tests;
+4. the app's build and tests on an iPhone and an iPad simulator;
+5. screenshots of every screen, pushed to the `ci-screenshots` branch.
+
+The **iOS** workflow, run by hand, archives and uploads to TestFlight. The App Store kit is in
+[`docs/app-store/`](docs/app-store/README.md).
+
+### Layout
+
+- `engine/core/` — the engine:
+  - exact analysis (`ca.rs`) and basic strategy (`strategy.rs`);
+  - simulator (`sim.rs`), index generator (`indices.rs`), risk (`risk.rs`), edge model (`edge.rs`);
+  - side bets (`sidebets.rs`) and the table game (`game.rs`).
+- `engine/ffi/` — the Swift interface (UniFFI). `engine/bindgen/` generates the Swift bindings.
+- `apple/CasinoGhostCore/` — Swift package wrapping the engine's XCFramework.
+- `apple/CasinoGhost/` — the SwiftUI app:
+  - `Table/` (felt, shoe, tray, cards, chips, controls);
+  - `Dashboard/` (edge gauge and cards);
+  - `Lab/`, `Strategy/`, `Rules/`, `Settings/`;
+  - `Feel/` (haptics, sound).
+- `scripts/render-native-cards.mjs`, `scripts/render-native-sounds.py` — card images and table
+  sounds for the app.
+
+## The web version
+
+### What's in it
 
 | Screen | What it does |
 |---|---|
@@ -13,7 +73,7 @@ index plays, and exact, countable side bets (21+3, Perfect Pairs, Lucky Ladies).
 | **Strategy** | Basic-strategy chart solved for the current rules, the house edge with perfect play, and the index plays in use. |
 | **Rules** | Presets, every rule as a control, table limits, and a plain-English rules box ("6 decks, dealer hits soft 17, late surrender"). |
 
-## Keyboard
+### Keyboard
 
 | Between rounds | | During a hand | |
 |---|---|---|---|
@@ -25,7 +85,7 @@ index plays, and exact, countable side bets (21+3, Perfect Pairs, Lucky Ladies).
 | `E` | estimate the decks left | | |
 | `Space` or `Enter` | deal | | |
 
-## Run it on your desktop
+### Run it on your desktop
 
 **Install it as an app (Windows, Mac, Linux).** Once GitHub Pages is on for this repository
 (Settings → Pages → Source: *GitHub Actions*), every push to `main` publishes the app to
@@ -37,31 +97,7 @@ index plays, and exact, countable side bets (21+3, Perfect Pairs, Lucky Ladies).
 `npm run build:single` into `dist-single/index.html`) runs straight from disk in any modern
 browser, no install or internet needed (fonts fall back to system fonts offline).
 
-## iPhone and iPad
-
-CasinoGhost ships as a native iOS app through [Capacitor](https://capacitorjs.com) (`ios/`):
-
-- haptics, plus table sounds synthesised with Web Audio;
-- storage that iOS won't purge;
-- a status bar that follows the theme;
-- an in-app Safari sheet for links;
-- a launch screen;
-- the session (including the shoe in play) saved and restored;
-- fully offline.
-
-The App Store kit is in [`docs/app-store/`](docs/app-store/README.md): listing copy, privacy and
-age-rating answers, App Review notes, screenshots, and a step-by-step release checklist. The
-**iOS** workflow builds the Xcode project on a GitHub-hosted Mac on every push, and uploads to
-TestFlight when run by hand with your App Store Connect API key.
-
-```bash
-npm run ios:sync      # web build, then copy it into the Xcode project
-npm run ios:open      # open in Xcode (needs a Mac)
-npm run screenshots   # App Store screenshots, after npm run build
-node scripts/generate-app-assets.mjs   # app icon and launch screen from assets/*.svg
-```
-
-## Run it
+### Run it
 
 ```bash
 npm install
@@ -71,7 +107,7 @@ npm run build        # production build in dist/
 npm run build:single # one self-contained HTML file in dist-single/
 ```
 
-## How it's built
+### How it's built
 
 - `src/engine/cards.ts` — 52-type shoe with suits, seedable RNG.
 - `src/engine/sidebets.ts` — closed-form exact EV for each side bet from any shoe composition;
@@ -83,10 +119,8 @@ npm run build:single # one self-contained HTML file in dist-single/
   rounds per hour.
 - `src/lib/dashboard.ts`, `src/components/widgets.tsx` — dashboard configuration and widgets.
 - `public/sw.js`, `public/manifest.webmanifest` — offline cache and install metadata.
-- `src/lib/native.ts`, `src/lib/sound.ts` — native bridge (haptics, durable storage, status bar,
-  links) with web fallbacks, and synthesised table sounds.
-- `ios/`, `capacitor.config.ts` — the iOS app (Swift Package Manager), privacy manifest, icon and
-  launch screen.
+- `src/lib/native.ts`, `src/lib/sound.ts` — browser storage, vibration and links, and
+  synthesised table sounds.
 - `public/privacy.html`, `public/support.html` — privacy policy and support page.
 - Fonts: Big Shoulders Display, Figtree and JetBrains Mono (SIL OFL), bundled via Fontsource.
 - `src/engine/strategy.ts` — typed façade over the vendored strategy engine.
@@ -97,9 +131,9 @@ npm run build:single # one self-contained HTML file in dist-single/
 - `src/components/Dealer.tsx`, `ShoeTray.tsx` — dealer station, shoe and discard tray artwork.
 - UI: React 19, TypeScript, Tailwind CSS 4, Motion.
 
-## Verification
+### Verification
 
-`npm test` checks, among other things:
+The engine's checks are listed in [docs/ENGINE.md](docs/ENGINE.md). For the web version, `npm test` checks, among other things:
 
 - Perfect Pairs 25/12/6, six decks: 6.11% house edge (published figure).
 - 21+3 Classic 9:1, six decks: 3.24% house edge (commonly published figure).
@@ -116,7 +150,9 @@ Illustrious 18 / Fab 4) pass upstream.
 
 ## Next
 
-- Game variants: Free Bet Blackjack, Blackjack Switch, Spanish 21 (need engine changes).
-- More side bets (Buster Blackjack, Match the Dealer, Royal Match).
-- Other counting systems for the main game, bet-spread and risk-of-ruin tools.
-- iOS polish: Dynamic Type, VoiceOver narration of the table, an Android build.
+- **Pro unlock:** a one-time in-app purchase (StoreKit 2) for the Lab and the generated indices.
+- **Drills:** flash-card drills for counting down a deck, true-count conversion and index plays.
+- **Game variants:** Free Bet Blackjack, Blackjack Switch and Spanish 21.
+- **More side bets:** Buster Blackjack, Match the Dealer and Royal Match.
+- **Team and shuffle play:** back-counting and wonging at the table, and shuffle-tracking analysis.
+- **Accessibility:** Dynamic Type throughout, and VoiceOver narration of the table.

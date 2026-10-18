@@ -9,8 +9,8 @@ are measured against Apple's limits.
 |---|---|---|---|
 | Name | 30 | `CasinoGhost: Blackjack Trainer` | 30 |
 | Subtitle | 30 | `Card counting & side-bet lab` | 28 |
-| Promotional text | 170 | `Train at a table that feels real: a live shoe, a discard tray for deck estimation, a dealer who keeps the pace, and every decision graded against the count.` | 156 |
-| Keywords | 100 | `hi-lo,basic strategy,true count,21,perfect pairs,21+3,lucky ladies,deviations,shoe,casino,practice` | 98 |
+| Promotional text | 170 | `Your edge at every count, from 10 million simulated rounds of your exact game. Train at a table that feels real, with every decision graded against the count.` | 158 |
+| Keywords | 100 | `hi-lo,basic strategy,true count,21,deviations,simulator,risk of ruin,perfect pairs,21+3,casino,shoe` | 99 |
 
 Keywords leave out words already in the name and subtitle (blackjack, trainer, card, counting,
 side, bet, lab), because the App Store indexes those already. Promotional text can be changed at
@@ -19,48 +19,52 @@ any time without a new review; use it for news ("Now with …").
 ## Description (4,000 limit)
 
 ```
-CasinoGhost is a blackjack trainer for players who want to learn the game properly: basic strategy, card counting, index plays and the side bets you see on casino floors today. Every decision you make is graded against the correct play for the true count, and every number on screen is computed from the cards actually left in the shoe.
+CasinoGhost is a blackjack trainer and advantage-play lab for players who want to learn the game properly: basic strategy for any rules, card counting with index plays, bet spreads and risk, and the side bets on casino floors today. Every decision is graded against the correct play for the count, and every number comes from an exact engine running on your device.
 
 A TABLE THAT FEELS REAL
-• A dealing shoe you can read: watch it empty, with the cut card in place
-• A discard tray that fills as the shoe goes, with deck marks for practising deck estimation
+• A dealing shoe that empties as you play, with the cut card in place
+• A discard tray that fills to scale, for estimating decks by eye
 • A dealer who deals, peeks, calls the hands and keeps the pace
-• Four dealing speeds, from slow and deliberate to instant drills
-• Real chips and a bankroll on the rail; bet with taps, long-press to remove
+• Other players at the table, whose cards you have to count
+• Four dealing speeds, from deliberate to instant drills
+• Hand signals: tap to hit, swipe to stand
+
+AN EDGE GAUGE YOU CAN TRUST
+• Your edge at your count, from 10 million simulated rounds of your exact game: rules, penetration, players, count, rounding and index plays
+• A band showing how far the true edge of real shoes can stray from the count
+• Your game's whole curve, with the break-even count and how often each count comes up
+• An optional marker with the exact edge of the cards actually left
 
 GRADED PLAY
-• Basic strategy generated for your exact rules, not copied from a chart
-• Hi-Lo index plays (Illustrious 18 and Fab 4), including insurance
-• Every mistake is costed in expected value, so you see which errors matter
+• Basic strategy solved for your exact rules, not copied from a chart
+• Illustrious 18, Fab 4 or full index sets, or indices generated for your game
+• Every mistake priced in money from the cards left, so you see which errors matter
 • Accuracy by hard totals, soft totals, pairs, insurance and index plays
 
-THE COUNT, ALWAYS ON
-• Running count and true count pinned to the table, or hidden for practice
-• Gauges for true count, estimated edge, shoe depth and accuracy
-• A deck-estimation drill based on the discard tray
-• A "heat" meter that shows how much your betting follows the count
+EIGHT COUNTING SYSTEMS
+• Hi-Lo, KO, Red 7, Hi-Opt I, Hi-Opt II, Omega II, Zen and Wong Halves
+• Your own true-count conventions: floor, truncate, round or exact, and decks estimated to the half or whole deck
+• Running and true count on the table, or hidden for practice
+
+THE LAB
+• Simulate any game in seconds and see the edge at every count
+• Evaluate a bet spread: win rate, standard deviation, risk of ruin, N0, DI and SCORE, and the bankroll you need
+• Let the optimiser find the best spread for your bankroll, limits and risk
+• Generate index plays for any count and rules, ranked by what they're worth
 
 COUNT THE SIDE BETS
-• Exact edge for 21+3, Perfect Pairs and Lucky Ladies from the current shoe
-• Side Bet Lab: enter the paytable your casino uses and see the house edge, hit rates and variance
-• Effect of removal for every card, and a simple count derived for each bet
-• Simulations of 20,000 shoes show when a side bet turns positive and what it is worth
+• Exact edge for 21+3, Perfect Pairs and Lucky Ladies, from the current shoe and any paytable
+• The effect of removing each card, a count derived for each bet, and a simulation of counting it
 
 YOUR TABLE, YOUR RULES
-• 1 to 8 decks, dealer hits or stands on soft 17, doubling and splitting rules, surrender, peek, 3:2 or 6:5, penetration and table limits
-• Common tables built in, or type a shorthand like "6D H17 DAS LS 3:2"
-• Strategy charts and house edge update as soon as you change a rule
-
-BUILD YOUR OWN DASHBOARD
-• Choose from 16 widgets: counts, gauges, statistics, stopwatch, speedometer, luck curve and charts for bankroll, true count, bets and errors
-• Place them left, right or on both sides of the table on iPad
+• 1 to 8 decks, soft 17, 3:2 or 6:5, doubling and splitting rules, surrender, peek or no hole card, penetration or a continuous shuffler, table limits
+• Common tables built in, or type the rules as shorthand: "6D H17 DAS LS 3:2"
 
 MADE FOR iPHONE AND iPAD
-• Haptics for chips, decisions and results; table sounds you can turn off
-• Light and dark appearance
-• Your session is saved: bankroll, statistics and the shoe in play
+• Native, smooth and fast, with haptics and table sounds
+• Light and dark appearance; keyboard shortcuts on iPad
+• Your session is saved, including the shoe in play
 • Works fully offline. No account, no ads, no tracking, no data collected
-• Keyboard shortcuts on iPad with a keyboard
 
 CasinoGhost is a training tool. No real money is wagered and nothing can be won. Counting cards does not guarantee winning, and casinos may refuse play to counters. If gambling stops being fun, help is free and confidential: in the US call 1-800-GAMBLER, in the UK visit BeGambleAware.org.
 ```
@@ -87,8 +91,10 @@ changed with any update.
 
 ## Screenshots
 
-Generated by `npm run build && npm run screenshots`. The script plays a seeded session, so each
-run produces the same images. The JPEGs (no alpha channel) are in `docs/app-store/screenshots/`.
+Taken from the native app on the iPhone 17 Pro Max and 13-inch iPad simulators by the **Apple**
+workflow. The app launches with `-screenshot <screen>`, which plays a seeded session, so each run
+produces the same images. The workflow pushes them to the `ci-screenshots` branch; they are
+copied into `docs/app-store/screenshots/` as JPEGs (no alpha channel).
 
 | Display | Size | Files |
 |---|---|---|

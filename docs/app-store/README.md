@@ -7,29 +7,33 @@ and either a Mac or the GitHub Actions workflow with signing secrets. This page 
 |---|---|
 | [listing.md](listing.md) | Name, subtitle, keywords, description, URLs, category, screenshots |
 | [app-store-connect.md](app-store-connect.md) | Answers for App Privacy, the age rating, App Review notes, export compliance, content rights |
-| [screenshots/](screenshots/) | 6.9" iPhone and 13" iPad screenshots (`npm run build && npm run screenshots`) |
+| [screenshots/](screenshots/) | 6.9" iPhone and 13" iPad screenshots of the native app (from the Apple workflow) |
 | [`public/privacy.html`](../../public/privacy.html), [`public/support.html`](../../public/support.html) | Privacy policy and support page, published with GitHub Pages |
-| [`.github/workflows/ios.yml`](../../.github/workflows/ios.yml) | Mac CI: Simulator build on every push; TestFlight upload when run by hand |
+| [`.github/workflows/apple.yml`](../../.github/workflows/apple.yml) | Mac CI on every push: engine, Swift package and app tests on iPhone and iPad simulators, and screenshots |
+| [`.github/workflows/ios.yml`](../../.github/workflows/ios.yml) | TestFlight upload, run by hand |
 
 ## Already in the project
 
-- **Capacitor iOS app** (`ios/`), Swift Package Manager, bundle ID `com.casinoghost.app`, iOS 16.4+,
-  iPhone (portrait) and iPad (all orientations), with a shared `App` scheme for command-line builds.
-- **App icon** (1024 px, opaque) and **launch screen**, rendered from `assets/*.svg` by
-  `node scripts/generate-app-assets.mjs`.
-- **Privacy manifest** (`ios/App/App/PrivacyInfo.xcprivacy`): no tracking, no data collected,
-  UserDefaults declared with reason `CA92.1`.
+- **The native app** (`apple/CasinoGhost.xcodeproj`), with a shared `CasinoGhost` scheme for
+  command-line builds:
+  - SwiftUI on the Rust engine (`engine/`), linked as an XCFramework;
+  - bundle ID `com.casinoghost.app`, iOS 17+;
+  - iPhone (portrait) and iPad (all orientations, Split View and Stage Manager).
+- **App icon** (1024 px, opaque) and **launch screen** (the theme's background colour).
+- **Privacy manifest** (`apple/CasinoGhost/PrivacyInfo.xcprivacy`):
+  - no tracking and no data collected;
+  - UserDefaults declared with reason `CA92.1`;
+  - the system clock declared with reason `35F9.1`.
 - `ITSAppUsesNonExemptEncryption = false`, so App Store Connect skips the export-compliance
   questions.
 - **Native behaviour:**
-  - haptics;
-  - storage that survives iOS clearing the WebView;
-  - a status bar that follows the theme;
-  - a splash fade;
-  - links open in an in-app Safari sheet;
-  - the session pauses when the app goes to the background;
-  - the shoe in play is restored after a relaunch.
-- **Offline by design:** fonts, card art and code are bundled, and the app makes no network requests.
+  - haptics and table sounds;
+  - the session is saved after every round, and the shoe in play is restored after a relaunch;
+  - the session clock pauses when the app goes to the background;
+  - light and dark appearance;
+  - hardware-keyboard shortcuts on iPad.
+- **Offline by design:** card art, sounds and the engine are bundled, and the app makes no network
+  requests.
 
 ## What you need
 
@@ -55,19 +59,18 @@ and either a Mac or the GitHub Actions workflow with signing secrets. This page 
 
    If the bundle ID isn't offered, register it first under Certificates, Identifiers & Profiles →
    Identifiers → +, as an explicit App ID with no extra capabilities. Bundle IDs are unique
-   across the whole store. If `com.casinoghost.app` is taken, choose another, then change `appId`
-   in `capacitor.config.ts` and `PRODUCT_BUNDLE_IDENTIFIER` in the Xcode project to match.
+   across the whole store. If `com.casinoghost.app` is taken, choose another, then change
+   `PRODUCT_BUNDLE_IDENTIFIER` in the Xcode project to match.
 3. **Check the URLs** in [listing.md](listing.md#urls) open.
 4. **Upload a build.** Use either option.
 
-   *Option A, on a Mac:*
+   *Option A, on a Mac with Xcode 26 and [Rust](https://rustup.rs):*
    ```sh
-   npm ci
-   npm run ios:sync      # web build + copy into the iOS project
-   npm run ios:open      # opens Xcode
+   scripts/build-core-apple.sh          # builds the engine for iOS (the scheme also runs it)
+   open apple/CasinoGhost.xcodeproj
    ```
    Then in Xcode:
-   1. Select the **App** target → **Signing & Capabilities** and choose your team. Leave
+   1. Select the **CasinoGhost** target → **Signing & Capabilities** and choose your team. Leave
       "Automatically manage signing" on.
    2. Set the run destination to **Any iOS Device**, then choose **Product → Archive**.
    3. In the Organizer, choose **Distribute App → App Store Connect → Distribute**.
@@ -103,7 +106,8 @@ Add these secrets under Settings → Secrets and variables → Actions:
 The job uses Xcode's cloud-managed certificates, so there are no `.p12` files or provisioning
 profiles to export and store. Build numbers come from the workflow run number, which always
 increases. If you uploaded a higher build number by hand from Xcode, enter a larger number in
-the *Build number* field when you run the workflow. The version comes from `package.json`.
+the *Build number* field when you run the workflow. The version comes from `MARKETING_VERSION`
+in the Xcode project.
 
 The signing and upload steps can only be proven with your account. If the first run fails at
 *Archive* or *Sign and upload*, the log names the missing permission or agreement. The usual
@@ -112,45 +116,49 @@ Business.
 
 ## Device checklist
 
-These checks need real hardware; a Linux container and a desktop browser can't cover them.
+These checks need real hardware. The simulator runs in CI cannot cover them.
 
-- [ ] Launch: the splash fades straight into the table, with no white flash.
+- [ ] Launch: the launch screen goes straight into the table, with no white flash.
 - [ ] Safe areas:
   - nothing sits under the Dynamic Island or the home indicator;
-  - the tab bar clears the home indicator;
   - the action buttons stay above the tab bar.
-- [ ] Haptics: chip taps, decisions, mistakes and wins. Settings → Haptics turns them off.
-- [ ] Sound: the first tap after launch unlocks audio, and the silent switch mutes it.
+- [ ] Feel:
+  - the deal, flips and chip moves are smooth at 120 Hz on a ProMotion iPhone;
+  - the gauge needle and the marker on the curve glide as the count changes.
+- [ ] Edge gauge: on first launch it calibrates (a few seconds, with a progress bar). After that,
+  changing a rule recalibrates, and returning to an earlier game is instant (cached).
+- [ ] Lab: a simulation and an index generation finish in seconds, and Cancel stops them.
+- [ ] Haptics: chip taps, decisions, mistakes and wins. Settings turns them off.
+- [ ] Sound: table sounds play, and the silent switch mutes them.
 - [ ] Persistence:
   1. play a few rounds;
   2. swipe the app away and reopen it;
   3. the bankroll, statistics and shoe are as you left them.
 - [ ] Background: the session clock pauses when you leave the app.
-- [ ] Links: the Settings links open in a Safari sheet, and Done returns to the app.
-- [ ] Appearance: System, Light and Dark switch the theme and the status-bar colour.
+- [ ] Appearance: System, Light and Dark switch the theme.
 - [ ] iPad:
   - rotation;
   - Split View and Stage Manager sizes;
-  - a hardware keyboard (1–4, Space, H, S, D, P, R);
-  - the dashboard beside the table.
-- [ ] VoiceOver: a basic pass through betting, playing a hand and Settings.
-- [ ] Settings → Data → Erase all data returns the app to a fresh install.
+  - a hardware keyboard (Space to deal; H, S, D, P, R to play);
+  - the dashboard beside the table in landscape.
+- [ ] VoiceOver: a basic pass through betting, playing a hand, the gauge and Settings.
+- [ ] Settings → Erase all data returns the app to a fresh install.
 
 ## Before each update
 
-1. Bump `version` in `package.json`, and `MARKETING_VERSION` in the Xcode project if you upload
-   from Xcode.
-2. Run `npm test` and `npm run build`. If the UI changed, run `npm run screenshots` and upload
-   the new images.
+1. Bump `MARKETING_VERSION` in the Xcode project (and `version` in `engine/Cargo.toml` if the
+   engine changed).
+2. Check that the Apple workflow is green. If the UI changed, take the new screenshots from the
+   `ci-screenshots` branch.
 3. Upload through Option A or B, then add "What's New" text on the version page.
 
 ## Known gaps worth doing next
 
-- **Dynamic Type:** text sizes are fixed and don't yet follow the iOS text-size setting.
-- **VoiceOver:** controls are labelled, but the table itself (cards dealt, dealer actions) isn't
-  narrated yet.
-- **Bundle size:** the main script is about 1 MB, mostly the 52 card faces. That doesn't matter
-  for a local app, but lazy-loading would speed up the web version.
+- **Dynamic Type:** the table and gauges use fixed sizes. Forms and lists follow the text-size
+  setting.
+- **VoiceOver:** controls and the gauge are labelled, but dealing isn't narrated card by card yet.
+- **Pro unlock:** a one-time purchase (StoreKit 2) for the Lab and generated indices. This needs a
+  Paid Apps agreement in App Store Connect.
 - **Game variants:** Free Bet, Blackjack Switch and Spanish 21.
 - **Mac:** App Store Connect offers iPad apps on Apple-silicon Macs by default. Leave that on, or
   turn it off under Pricing and Availability until it has been tested.
