@@ -105,6 +105,9 @@ jobs:
             [ -z "$DEV" ] && continue
             xcrun simctl boot "$DEV" || true
             xcrun simctl bootstatus "$DEV" -b
+            # first-boot notices (such as "Ready for Apple Intelligence") arrive in the first minute
+            # or so; let them come and go before anything is captured
+            sleep 90
             xcrun simctl ui "$DEV" appearance dark
             xcrun simctl status_bar "$DEV" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 || true
             xcrun simctl install "$DEV" "$APP"
