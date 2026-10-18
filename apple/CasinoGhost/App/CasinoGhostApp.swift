@@ -73,11 +73,13 @@ struct TableScreen: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         if wide {
+                            let dash: CGFloat = 380
                             HStack(alignment: .top, spacing: 16) {
-                                FeltView(model: app.table, width: geo.size.width - 420)
+                                // the felt adds 14 pt of padding on each side of its content
+                                FeltView(model: app.table, width: geo.size.width - 32 - 16 - dash - 28)
                                     .frame(maxWidth: .infinity)
                                 DashboardView(model: app.table)
-                                    .frame(width: 380)
+                                    .frame(width: dash)
                             }
                             .padding(16)
                         } else {
@@ -129,12 +131,6 @@ struct TableScreen: View {
                     }
                     .accessibilityLabel("Table options")
                 }
-                ToolbarItem(placement: .topBarLeading) {
-                    Text(app.settings.rules.shorthand)
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
             }
         }
         .task {
@@ -150,8 +146,14 @@ struct TableScreen: View {
 enum ScreenshotDirector {
     static func prepareTable(_ t: TableModel) async {
         try? await Task.sleep(nanoseconds: 600_000_000)
+        let normal = t.settings
+        var instant = normal
+        instant.dealSpeed = .instant
+        t.update(settings: instant)
         t.addChip(25)
         for round in 0..<30 {
+            // the round that ends up in the screenshot is dealt at the usual pace
+            if round == 12 { t.update(settings: normal) }
             while t.busy { try? await Task.sleep(nanoseconds: 50_000_000) }
             t.deal()
             try? await Task.sleep(nanoseconds: 80_000_000)

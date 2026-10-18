@@ -75,7 +75,8 @@ private struct BandArc: Shape {
 
     func path(in rect: CGRect) -> Path {
         let c = CGPoint(x: rect.midX, y: rect.midY)
-        let r = min(rect.width, rect.height) / 2 * 0.9
+        // just outside the coloured ring, like a bracket around the range
+        let r = min(rect.width, rect.height) / 2 * 0.985
         return scale.arc(from: low, to: high, center: c, radius: r)
     }
 }
@@ -108,6 +109,7 @@ struct EdgeGauge: View {
         VStack(spacing: 10) {
             dial
                 .frame(height: 210)
+                .padding(.bottom, 12)
             if let profile {
                 EdgeCurveStrip(profile: profile, count: count, prefix: prefix)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -183,7 +185,7 @@ struct EdgeGauge: View {
                         ctx.stroke(tick, with: .color(Theme.fg2.opacity(major ? 0.9 : 0.45)), lineWidth: major ? 1.6 : 0.8)
                         if major {
                             let lp = sc.point(t, center: c, radius: r * 0.6)
-                            let label = t == 0 ? "0" : String(format: "%+.0f", t * 100)
+                            let label = abs(t) < 1e-9 ? "0" : String(format: "%+.0f", t * 100)
                             ctx.draw(Text(label).font(.system(size: r * 0.085, weight: .semibold, design: .rounded)).foregroundColor(Theme.muted), at: lp)
                         }
                         t += 0.0025
@@ -191,7 +193,7 @@ struct EdgeGauge: View {
                 }
                 if let band {
                     BandArc(low: band.low.clamped(sc.min, sc.max), high: band.high.clamped(sc.min, sc.max), scale: sc)
-                        .stroke(Theme.brass.opacity(0.45), style: StrokeStyle(lineWidth: side * 0.07, lineCap: .round))
+                        .stroke(Theme.brass.opacity(0.9), style: StrokeStyle(lineWidth: side * 0.022, lineCap: .round))
                         .animation(.spring(response: 0.6, dampingFraction: 0.8), value: band.low)
                 }
                 if let exact {

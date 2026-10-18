@@ -31,7 +31,7 @@ struct RulesScreen: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(p.name).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.fg)
-                                    Text(p.blurb).font(.caption).foregroundStyle(.secondary)
+                                    Text(p.blurb).font(.caption).foregroundStyle(Theme.muted)
                                 }
                                 Spacer()
                                 VerdictTag(verdict: p.verdict)
