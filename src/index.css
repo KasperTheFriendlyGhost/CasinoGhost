@@ -225,3 +225,20 @@ input[type="range"] { accent-color: var(--brass); }
   color: var(--fg);
   padding: 7px 10px;
 }
+
+/* Native app: no rubber-band page bounce, no text selection or long-press callouts on UI. */
+html.native, html.native body { overscroll-behavior: none; }
+html.native body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+html.native input, html.native textarea { -webkit-user-select: text; user-select: text; }
+
+/* On a medium-narrow table (an iPad with the dashboard beside it) the dealer's station fills the
+   top of the felt, so the limits placard and pinned count move down beside the dealer's cards. */
+.table-felt { container: felt / inline-size; }
+@container felt (min-width: 600px) and (max-width: 740px) {
+  .table-corner { top: 148px; }
+}

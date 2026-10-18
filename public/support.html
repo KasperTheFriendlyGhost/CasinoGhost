@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Support · CasinoGhost</title>
+<meta name="description" content="Help with CasinoGhost, the blackjack trainer and side-bet lab.">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<style>
+  :root { --bg: #f6f4ee; --panel: #fffdf8; --fg: #1b1d1b; --fg2: #4a504c; --line: #e2ddd0; --brass: #9a7426; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #101412; --panel: #171c19; --fg: #eef0ec; --fg2: #a9b3ad; --line: #2a322d; --brass: #d6ac52; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
+  main { max-width: 720px; margin: 0 auto; padding: max(32px, env(safe-area-inset-top)) 20px 64px; }
+  .brand { font-weight: 800; letter-spacing: .06em; text-transform: uppercase; font-size: 15px; color: var(--fg); text-decoration: none; }
+  .brand span { color: var(--brass); }
+  h1 { font-size: 30px; line-height: 1.2; margin: 28px 0 8px; }
+  h2 { font-size: 19px; margin: 36px 0 8px; }
+  p, li { color: var(--fg2); }
+  strong { color: var(--fg); }
+  a { color: var(--brass); }
+  .contact { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--brass); border-radius: 12px; padding: 16px 18px; }
+  .contact p { margin: 0; }
+  details { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; margin: 10px 0; }
+  summary { cursor: pointer; font-weight: 600; color: var(--fg); }
+  details p { margin: 10px 0 2px; }
+  kbd { font: 13px ui-monospace, Menlo, monospace; border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; background: var(--bg); color: var(--fg); }
+  footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 14px; color: var(--fg2); }
+</style>
+</head>
+<body>
+<main>
+  <a class="brand" href="./">Casino<span>Ghost</span></a>
+  <h1>Support</h1>
+  <p>CasinoGhost is a blackjack trainer and side-bet lab for iPhone, iPad and the web. Answers to common questions are below.</p>
+
+  <div class="contact"><p><strong>Need help or found a bug?</strong> Open an issue at <a href="https://github.com/KasperTheFriendlyGhost/CasinoGhost/issues">github.com/KasperTheFriendlyGhost/CasinoGhost/issues</a>. Include your device, iOS version and the app version (Settings → About).</p></div>
+
+  <h2>Playing</h2>
+  <details><summary>How do I bet, and how do I take a chip back?</summary>
+    <p>Tap a chip to add it to the selected spot (main bet or a side bet), then tap <strong>Deal</strong>. To remove a chip, long-press it. On iPad with a keyboard, <kbd>1</kbd>–<kbd>4</kbd> add chips, <kbd>Shift</kbd> plus a number removes one, and <kbd>Space</kbd> deals.</p></details>
+  <details><summary>How is my play graded?</summary>
+    <p>Each decision is compared with the best play for your table rules. With index plays switched on (Rules tab), the best play also depends on the Hi-Lo true count. A mistake is costed in expected value, which you can see in the Cost of Errors widget. Tap <strong>Hint</strong> at any time to see the correct play.</p></details>
+  <details><summary>What do the running count and true count mean?</summary>
+    <p>The Hi-Lo running count adds +1 for each 2–6 seen and −1 for each 10, face card or ace. The true count divides that by the decks left in the shoe. A higher true count means more high cards remain, which favours the player. To practise keeping the count yourself, hide the pinned count in the dashboard settings.</p></details>
+  <details><summary>How does deck estimation work?</summary>
+    <p>The discard tray fills as cards are played, just like a casino tray. Look at it, estimate the decks left in the shoe, and type your guess into the Deck Estimation widget. The tray's deck marks can be turned off when you want it harder.</p></details>
+  <details><summary>Can I change the rules?</summary>
+    <p>Yes. On the Rules tab, pick a common table or set the number of decks, soft 17, doubling, splitting, surrender, blackjack payout, penetration and table limits. You can also type a shorthand such as <kbd>6D H17 DAS LS 3:2</kbd>. Strategy charts and grading update immediately.</p></details>
+  <details><summary>Where do the side-bet numbers come from?</summary>
+    <p>They are computed exactly from the cards left in the shoe, not estimated. The Side Bet Lab shows the house edge for any paytable, the effect of removing each card, a count for each bet, and a simulation of 20,000 shoes.</p></details>
+
+  <h2>Your data</h2>
+  <details><summary>Will I lose my session if I close the app?</summary>
+    <p>No. Your bankroll, statistics and the shoe in play are saved after every round and restored the next time you open the app.</p></details>
+  <details><summary>How do I start over?</summary>
+    <p><strong>Settings → Data → Reset session</strong> clears the bankroll and statistics but keeps your settings. <strong>Erase all data</strong> returns the app to a fresh install. The dashboard settings also let you choose when a session resets automatically.</p></details>
+  <details><summary>Does CasinoGhost collect my data?</summary>
+    <p>No. There are no accounts, analytics or ads, and nothing leaves your device. See the <a href="./privacy.html">privacy policy</a>.</p></details>
+
+  <h2>Play responsibly</h2>
+  <p>CasinoGhost is a training tool: no real money is wagered and nothing can be won. Counting cards does not guarantee winning, and casinos may refuse play to counters. If gambling stops being fun, help is free and confidential: <a href="https://www.ncpgambling.org/help-treatment/">National Council on Problem Gambling</a> (US, call 1-800-GAMBLER) and <a href="https://www.begambleaware.org/">BeGambleAware</a> (UK).</p>
+
+  <footer><a href="./privacy.html">Privacy policy</a> · <a href="./">Open the web version</a></footer>
+</main>
+</body>
+</html>

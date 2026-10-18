@@ -67,6 +67,38 @@ describe('game session tracking', () => {
     expect(g2.stats.byCategory.index.n).toBe(cats.index.n);
   });
 
+  it('a relaunch continues the same shoe and running count', () => {
+    const rules = { ...defaultRules(), decks: 6 };
+    const g = new Game({ rules, deviations: 'none', pays }, makeRng(9));
+    g.setBet(10);
+    for (let i = 0; i < 25 && !(i > 0 && g.justShuffled); i++) {
+      g.deal();
+      if (g.phase === 'insurance') g.takeInsurance(false);
+      while (g.phase === 'player') g.act(g.advice()!.action);
+    }
+    expect(g.shoe.dealt).toBeGreaterThan(0);
+    const saved = JSON.parse(JSON.stringify(g.snapshot()));
+
+    const g2 = new Game({ rules, deviations: 'none', pays }, makeRng(10));
+    g2.restore(saved);
+    expect(g2.shoe.dealt).toBe(g.shoe.dealt);
+    expect(g2.rc).toBe(g.rc);
+    expect(g2.inTray).toBe(g.shoe.dealt);
+    expect(Array.from(g2.shoe.remaining)).toEqual(Array.from(g.shoe.remaining));
+    expect(g2.justShuffled).toBe(false);
+
+    // A shoe saved under different rules (here, decks) is ignored rather than half-applied.
+    const g3 = new Game({ rules: { ...rules, decks: 2 }, deviations: 'none', pays }, makeRng(11));
+    g3.restore(saved);
+    expect(g3.shoe.dealt).toBe(0);
+    expect(g3.rc).toBe(0);
+    expect(g3.bankroll).toBe(g.bankroll);
+    // So is a tampered one.
+    const g4 = new Game({ rules, deviations: 'none', pays }, makeRng(12));
+    g4.restore({ ...saved, shoe: { ...saved.shoe, order: saved.shoe.order.map(() => 0) } });
+    expect(g4.shoe.dealt).toBe(0);
+  });
+
   it('will not deal below the table minimum', () => {
     const g = new Game({ rules: defaultRules(), deviations: 'none', pays, limits: { min: 25, max: 500 } }, makeRng(1));
     g.setBet(10);

@@ -4,6 +4,7 @@ import { RANK_LABEL, SUIT_NAME, type Card } from '../engine/cards';
 import { useSpeed } from '../lib/dashboard';
 import { BACK_URL, faceUrl } from '../lib/cardArt';
 import { offsetTo, useAnchors } from '../lib/tableAnchors';
+import { sfx } from '../lib/sound';
 
 interface Props {
   card: Card;
@@ -32,6 +33,7 @@ export function PlayingCard({ card, faceDown = false, delay = 0, flipDelay = 0, 
     if (!el) return;
     if (reduce) { el.style.opacity = '1'; return; }
     const from = offsetTo(el, anchors?.shoe.current, { x: 260, y: -220 });
+    sfx.card(delay * speed + 0.05);
     animate(el, { x: [from.x, 0], y: [from.y, 0], rotate: [-28, 0], scale: [0.55, 1], opacity: [0, 1] },
       { type: 'spring', stiffness: 210 / speed, damping: 24 / Math.sqrt(speed), delay: delay * speed });
     // Mount-only: the deal plays once per card.

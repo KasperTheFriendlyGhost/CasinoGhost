@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { defaultRules, type DevMode, type Rules } from '../engine/strategy';
 import { defaultPaytable, type Paytable, type SideBetId } from '../engine/sidebets';
 import type { TableLimits } from '../engine/game';
+import { store } from './native';
 
 export interface AppSettings {
   rules: Rules;
@@ -24,7 +25,7 @@ export function defaultSettings(): AppSettings {
 function load(): AppSettings {
   const base = defaultSettings();
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = store.get(KEY);
     if (!raw) return base;
     const s = JSON.parse(raw);
     return { ...base, ...s, rules: { ...base.rules, ...s.rules }, pays: { ...base.pays, ...s.pays }, limits: { ...base.limits, ...s.limits } };
@@ -36,20 +37,32 @@ function load(): AppSettings {
 export function useSettings() {
   const [settings, setSettings] = useState<AppSettings>(load);
   useEffect(() => {
-    try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch { /* storage unavailable */ }
+    store.set(KEY, JSON.stringify(settings));
   }, [settings]);
   const update = useCallback((patch: Partial<AppSettings>) => setSettings((s) => ({ ...s, ...patch })), []);
   const updateRules = useCallback((patch: Partial<Rules>) => setSettings((s) => ({ ...s, rules: { ...s.rules, ...patch } })), []);
   return { settings, update, updateRules, reset: () => setSettings(defaultSettings()) };
 }
 
-/** Per-viewer UI preference stored in localStorage, tolerant of blocked storage. */
+/** UI preference kept on this device (durable in the native app), tolerant of blocked storage. */
 export function usePref<T>(key: string, initial: T) {
   const [v, setV] = useState<T>(() => {
-    try { const raw = localStorage.getItem(`casinoghost:${key}`); return raw ? (JSON.parse(raw) as T) : initial; } catch { return initial; }
+    try { const raw = store.get(`casinoghost:${key}`); return raw ? (JSON.parse(raw) as T) : initial; } catch { return initial; }
   });
   useEffect(() => {
-    try { localStorage.setItem(`casinoghost:${key}`, JSON.stringify(v)); } catch { /* storage unavailable */ }
+    store.set(`casinoghost:${key}`, JSON.stringify(v));
   }, [key, v]);
   return [v, setV] as const;
 }
+
+export type Appearance = 'system' | 'light' | 'dark';
+
+/** App-wide preferences: sound, haptics and appearance. */
+export interface AppPrefs {
+  sound: boolean;
+  volume: number;
+  haptics: boolean;
+  appearance: Appearance;
+}
+
+export const defaultAppPrefs = (): AppPrefs => ({ sound: true, volume: 0.6, haptics: true, appearance: 'system' });

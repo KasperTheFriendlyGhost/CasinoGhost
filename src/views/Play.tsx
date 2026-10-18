@@ -16,6 +16,8 @@ import { DealingShoe, DiscardTray } from '../components/ShoeTray';
 import { ChipRack, DealerFigure, DealerSays } from '../components/Dealer';
 import { AnchorsContext } from '../lib/tableAnchors';
 import { useTween } from '../lib/useTween';
+import { haptic, store } from '../lib/native';
+import { sfx } from '../lib/sound';
 import { RANK_LABEL } from '../engine/cards';
 import { CustomizeDashboard } from '../components/CustomizeDashboard';
 
@@ -39,10 +41,10 @@ const ACTIONS: { code: ActionCode; label: string; key: string }[] = [
 const SESSION_KEY = 'casinoghost:session';
 
 function loadSession(): Partial<SessionSnapshot> | null {
-  try { const raw = localStorage.getItem(SESSION_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+  try { const raw = store.get(SESSION_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
 }
 function saveSession(s: SessionSnapshot) {
-  try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch { /* storage unavailable */ }
+  store.set(SESSION_KEY, JSON.stringify(s));
 }
 
 function useGame(settings: AppSettings, dash: DashboardConfig) {
@@ -84,18 +86,35 @@ export function Play({ settings }: { settings: AppSettings }) {
   const evs = useMemo(() => game.sideBetEVs(), [game, game.version]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stakeOf = (s: Spot) => (s === 'main' ? game.mainBet : game.sideStakes[s]);
-  const setStake = (s: Spot, v: number) => (s === 'main' ? game.setBet(v) : game.setSideStake(s, v));
+  const setStake = (s: Spot, v: number) => {
+    const before = s === 'main' ? game.mainBet : game.sideStakes[s];
+    if (s === 'main') game.setBet(v); else game.setSideStake(s, v);
+    const after = s === 'main' ? game.mainBet : game.sideStakes[s];
+    if (after !== before) { sfx.chip(); haptic('select'); }
+  };
+  /** Tap feedback after a graded decision. */
+  const feedback = () => {
+    const d = game.lastDecision;
+    if (!d) return;
+    if (d.correct) haptic('tap'); else { haptic('warning'); sfx.mistake(); }
+  };
+  const insure = (take: boolean) => { game.takeInsurance(take); feedback(); };
 
-  const act = (code: ActionCode) => { setHint(null); game.act(code); };
+  const act = (code: ActionCode) => { setHint(null); game.act(code); feedback(); };
   const [collecting, setCollecting] = useState(false);
   const speedF = speedFactor(dash.speed);
+  const dealNow = () => {
+    if (game.shoe.needsShuffle && game.mainBet >= game.limits.min) { sfx.shuffle(); haptic('heavy'); }
+    game.deal();
+  };
   const deal = () => {
     if (collecting) return;
     setHint(null);
     if (game.phase === 'settled' && game.onTable > 0 && speedF > 0) {
       setCollecting(true);
-      setTimeout(() => { setCollecting(false); game.deal(); }, (0.42 * speedF + 0.05) * 1000);
-    } else game.deal();
+      sfx.card(); sfx.card(0.08);
+      setTimeout(() => { setCollecting(false); dealNow(); }, (0.42 * speedF + 0.05) * 1000);
+    } else dealNow();
   };
   const shoeRef = useRef<HTMLSpanElement>(null);
   const trayRef = useRef<HTMLButtonElement>(null);
@@ -144,8 +163,8 @@ export function Play({ settings }: { settings: AppSettings }) {
         if (a) { e.preventDefault(); act(a.code); }
         if (k === '?' || k === '/') showHint();
       } else if (game.phase === 'insurance') {
-        if (k === 'i' || k === 'y') game.takeInsurance(true);
-        if (k === 'n') game.takeInsurance(false);
+        if (k === 'i' || k === 'y') insure(true);
+        if (k === 'n') insure(false);
       } else if (betKeys(e)) {
         e.preventDefault();
       } else if (k === ' ' || k === 'enter') {
@@ -162,6 +181,22 @@ export function Play({ settings }: { settings: AppSettings }) {
   const d = game.lastDecision;
   const showRound = phase === 'settled';
   const timing = roundTiming(game);
+  useEffect(() => {
+    if (game.phase !== 'settled' || game.stats.rounds === 0) return;
+    const at = timing.result * speedF;
+    const bj = game.hands.some((h) => h.outcome === 'blackjack');
+    if (game.roundNet > 0) { sfx.chip(at); sfx.chip(at + 0.09); if (bj) sfx.blackjack(at); else sfx.win(at + 0.05); }
+    const t = setTimeout(() => { if (game.roundNet > 0) haptic(bj ? 'success' : 'tap'); }, at * 1000);
+    return () => clearTimeout(t);
+    // Once per settled round.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.stats.rounds]);
+  // Stop the session clock while the app is in the background.
+  useEffect(() => {
+    const onVis = () => { if (document.hidden) game.pause(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [game]);
   const speech = dealerSpeech(game, timing.result);
   const left = widgetsFor(dash, 'left'), right = widgetsFor(dash, 'right');
   const wp = { game, cfg: dash, hideCount, setHideCount, evs, onPickSide: (id: SideBetId) => setSpot(id) };
@@ -194,7 +229,7 @@ export function Play({ settings }: { settings: AppSettings }) {
         </div>
         {/* Table */}
         <div className="rail relative rounded-[28px] p-[10px] pb-[46px] sm:p-[14px] sm:pb-[52px]" style={{ ['--card-w' as string]: 'clamp(52px, 7vw, 84px)', ['--card-w-sm' as string]: 'clamp(42px, 5.6vw, 68px)' }}>
-          <div className="felt felt-shape relative flex min-h-[380px] flex-col overflow-hidden rounded-[20px] sm:min-h-[540px]">
+          <div className="felt felt-shape table-felt relative flex min-h-[380px] flex-col overflow-hidden rounded-[20px] sm:min-h-[540px]">
             <FeltPrint rules={R} dim={game.onTable > 0 && !collecting} />
             <TableCorner game={game} showCount={dash.pinCount && !hideCount} />
             {/* Dealer's station, as on a real table: discard tray, dealer and chip rack, shoe */}
@@ -245,7 +280,7 @@ export function Play({ settings }: { settings: AppSettings }) {
         </div>
 
         {/* Controls */}
-        <div className="panel sticky bottom-0 z-20 flex flex-col gap-2 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:static sm:gap-3 sm:p-4" style={{ boxShadow: 'var(--shadow)' }}>
+        <div className="panel sticky bottom-[calc(64px+env(safe-area-inset-bottom,0px))] z-20 flex flex-col gap-2 p-3 sm:static sm:gap-3 sm:p-4" style={{ boxShadow: 'var(--shadow)' }}>
           <div className="flex min-h-[30px] items-center gap-2" aria-live="polite">
             <AnimatePresence mode="wait">
               {hint ? (
@@ -273,8 +308,8 @@ export function Play({ settings }: { settings: AppSettings }) {
           {phase === 'insurance' ? (
             <div className="flex flex-wrap items-center gap-3">
               <p className="mr-auto font-medium">Dealer shows an ace. Insurance costs {money(game.mainBet / 2)}.</p>
-              <Btn onClick={() => game.takeInsurance(true)} kbd="I">Take insurance</Btn>
-              <Btn primary onClick={() => game.takeInsurance(false)} kbd="N">No insurance</Btn>
+              <Btn onClick={() => insure(true)} kbd="I">Take insurance</Btn>
+              <Btn primary onClick={() => insure(false)} kbd="N">No insurance</Btn>
             </div>
           ) : phase === 'player' ? (
             <div className="grid grid-cols-5 gap-1.5 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
@@ -368,7 +403,7 @@ function ToolButton({ children, onClick, pressed, disabled, label }: { children:
 function TableCorner({ game, showCount }: { game: Game; showCount: boolean }) {
   const { min, max } = game.limits;
   return (
-    <div className="absolute left-2 top-2 z-20 flex origin-top-left scale-[0.8] items-start gap-3 sm:left-4 sm:top-4 sm:scale-100">
+    <div className="table-corner absolute left-2 top-2 z-20 flex origin-top-left scale-[0.8] items-start gap-3 sm:left-4 sm:top-4 sm:scale-100">
     <div className="flex flex-col items-start gap-2">
       <div className="rounded-md bg-[#f4efe2] px-2.5 py-1 text-center leading-none text-[#1b1a16] shadow-[0_3px_0_rgba(0,0,0,0.35)]">
         <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#6b5a2e]">Limits</div>

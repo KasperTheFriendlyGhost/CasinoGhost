@@ -16,8 +16,11 @@ function singleFileHead(): Plugin {
 }
 
 // `--mode single` emits one self-contained index.html (double-click to run, or share).
+const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { version: string };
+
 export default defineConfig(({ mode }) => ({
   base: './',
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   plugins: [react(), tailwindcss(), ...(mode === 'single' ? [viteSingleFile(), singleFileHead()] : [])],
   build: { outDir: mode === 'single' ? 'dist-single' : 'dist' },
   publicDir: mode === 'single' ? false : 'public',

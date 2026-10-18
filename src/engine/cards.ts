@@ -57,6 +57,9 @@ export function makeRng(seed = Date.now()): () => number {
 let nextUid = 1;
 
 /** Multi-deck shoe with a cut card, lazy Fisher-Yates draws and a live composition. */
+/** A shoe saved between visits: the card order and how far it has been dealt. */
+export interface ShoeState { decks: number; ptr: number; order: number[] }
+
 export class Shoe {
   readonly decks: number;
   readonly size: number;
@@ -84,6 +87,27 @@ export class Shoe {
   shuffle() {
     this.ptr = 0;
     this.remaining.fill(this.decks);
+  }
+
+  save(): ShoeState {
+    return { decks: this.decks, ptr: this.ptr, order: Array.from(this.order) };
+  }
+
+  /** Restore a saved shoe. Returns false, leaving the shoe as it was, if the state does not fit. */
+  load(s: ShoeState | undefined): boolean {
+    if (!s || s.decks !== this.decks || !Array.isArray(s.order) || s.order.length !== this.size) return false;
+    if (!Number.isInteger(s.ptr) || s.ptr < 0 || s.ptr > this.size) return false;
+    const counts = new Int32Array(52);
+    for (const t of s.order) {
+      if (!Number.isInteger(t) || t < 0 || t >= 52) return false;
+      counts[t]++;
+    }
+    if (counts.some((c) => c !== this.decks)) return false;
+    this.order.set(s.order);
+    this.ptr = s.ptr;
+    this.remaining.fill(0);
+    for (let i = s.ptr; i < this.size; i++) this.remaining[this.order[i]]++;
+    return true;
   }
 
   draw(): Card {

@@ -37,6 +37,30 @@ index plays, and exact, countable side bets (21+3, Perfect Pairs, Lucky Ladies).
 `npm run build:single` into `dist-single/index.html`) runs straight from disk in any modern
 browser, no install or internet needed (fonts fall back to system fonts offline).
 
+## iPhone and iPad
+
+CasinoGhost ships as a native iOS app through [Capacitor](https://capacitorjs.com) (`ios/`):
+
+- haptics, plus table sounds synthesised with Web Audio;
+- storage that iOS won't purge;
+- a status bar that follows the theme;
+- an in-app Safari sheet for links;
+- a launch screen;
+- the session (including the shoe in play) saved and restored;
+- fully offline.
+
+The App Store kit is in [`docs/app-store/`](docs/app-store/README.md): listing copy, privacy and
+age-rating answers, App Review notes, screenshots, and a step-by-step release checklist. The
+**iOS** workflow builds the Xcode project on a GitHub-hosted Mac on every push, and uploads to
+TestFlight when run by hand with your App Store Connect API key.
+
+```bash
+npm run ios:sync      # web build, then copy it into the Xcode project
+npm run ios:open      # open in Xcode (needs a Mac)
+npm run screenshots   # App Store screenshots, after npm run build
+node scripts/generate-app-assets.mjs   # app icon and launch screen from assets/*.svg
+```
+
 ## Run it
 
 ```bash
@@ -59,6 +83,12 @@ npm run build:single # one self-contained HTML file in dist-single/
   rounds per hour.
 - `src/lib/dashboard.ts`, `src/components/widgets.tsx` — dashboard configuration and widgets.
 - `public/sw.js`, `public/manifest.webmanifest` — offline cache and install metadata.
+- `src/lib/native.ts`, `src/lib/sound.ts` — native bridge (haptics, durable storage, status bar,
+  links) with web fallbacks, and synthesised table sounds.
+- `ios/`, `capacitor.config.ts` — the iOS app (Swift Package Manager), privacy manifest, icon and
+  launch screen.
+- `public/privacy.html`, `public/support.html` — privacy policy and support page.
+- Fonts: Big Shoulders Display, Figtree and JetBrains Mono (SIL OFL), bundled via Fontsource.
 - `src/engine/strategy.ts` — typed façade over the vendored strategy engine.
 - `src/engine/vendor/cutcard/` — exact blackjack EV engine, generated basic strategy and Hi-Lo
   deviations from [noahskahn/cutcard](https://github.com/noahskahn/cutcard) (MIT, see its `LICENSE`).
@@ -78,7 +108,8 @@ npm run build:single # one self-contained HTML file in dist-single/
 - 20,000 auto-played rounds of perfect strategy: every decision graded correct and the result
   within the expected range of the exact house edge; the running count always matches the cards shown.
 - Session tracking: outcome and accuracy tallies add up, table limits are enforced, a saved
-  session restores exactly; heat, luck and pace calculations against hand-worked values.
+  session restores exactly (including the shoe and running count; a shoe saved under other rules
+  or tampered with is ignored); heat, luck and pace calculations against hand-worked values.
 
 The vendored engine's own tests (basic strategy and house edges against Wizard of Odds figures,
 Illustrious 18 / Fab 4) pass upstream.
@@ -87,5 +118,5 @@ Illustrious 18 / Fab 4) pass upstream.
 
 - Game variants: Free Bet Blackjack, Blackjack Switch, Spanish 21 (need engine changes).
 - More side bets (Buster Blackjack, Match the Dealer, Royal Match).
-- Other counting systems for the main game, bet-spread and risk-of-ruin tools, a native desktop
-  build (Tauri) and mobile (Capacitor) packaging.
+- Other counting systems for the main game, bet-spread and risk-of-ruin tools.
+- iOS polish: Dynamic Type, VoiceOver narration of the table, an Android build.

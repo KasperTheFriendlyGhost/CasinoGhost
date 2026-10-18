@@ -1,7 +1,7 @@
 // Table game: one seat (up to four hands after splits), Hi-Lo running count, side bets,
 // and grading of every decision against the generated strategy + index plays.
 
-import { Shoe, valueOf, type Card } from './cards';
+import { Shoe, valueOf, type Card, type ShoeState } from './cards';
 import { ACT, ACT_NAMES, Advisor, handInfo, houseEdge, type ActionCode, type DevMode, type Rules } from './strategy';
 import { SIDE_BETS, evaluate, settleSideBet, sideBetSD, type Paytable, type SideBetId, type SideBetResult } from './sidebets';
 
@@ -116,6 +116,9 @@ export interface SessionSnapshot {
   log: Decision[];
   rounds: RoundRecord[];
   elapsed: number;
+  /** The shoe in play and its running count, so a relaunch continues the same shoe. */
+  shoe: ShoeState;
+  rc: number;
 }
 
 /** Standard deviation of one blackjack round per unit bet (multi-deck, basic strategy). */
@@ -179,7 +182,7 @@ export class Game {
   get limits(): TableLimits { return this.settings.limits ?? { min: 1, max: 100000 }; }
 
   snapshot(): SessionSnapshot {
-    return { bankroll: this.bankroll, mainBet: this.mainBet, sideStakes: { ...this.sideStakes }, stats: this.stats, log: this.log, rounds: this.rounds, elapsed: this.elapsed() };
+    return { bankroll: this.bankroll, mainBet: this.mainBet, sideStakes: { ...this.sideStakes }, stats: this.stats, log: this.log, rounds: this.rounds, elapsed: this.elapsed(), shoe: this.shoe.save(), rc: this.rc };
   }
 
   restore(s: Partial<SessionSnapshot>) {
@@ -190,6 +193,7 @@ export class Game {
     if (Array.isArray(s.log)) this.log = s.log;
     if (Array.isArray(s.rounds)) this.rounds = s.rounds;
     if (typeof s.elapsed === 'number') { this.clockBase = s.elapsed; this.clockStartedAt = this.clockStartedAt === null ? null : Date.now(); }
+    if (typeof s.rc === 'number' && this.shoe.load(s.shoe)) { this.rc = s.rc; this.justShuffled = this.shoe.dealt === 0; }
     this.emit();
   }
 
