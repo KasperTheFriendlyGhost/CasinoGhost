@@ -115,7 +115,8 @@ jobs:
             sleep 45
             for SCREEN in table dashboard lab strategy rules settings; do
               xcrun simctl launch --terminate-running-process "$DEV" com.casinoghost.app -screenshot "$SCREEN"
-              sleep 10
+              # the table and dashboard play a scripted session first
+              case "$SCREEN" in table|dashboard) sleep 22 ;; *) sleep 8 ;; esac
               xcrun simctl io "$DEV" screenshot "shots/$KIND-$SCREEN.png"
             done
             xcrun simctl shutdown "$DEV" || true

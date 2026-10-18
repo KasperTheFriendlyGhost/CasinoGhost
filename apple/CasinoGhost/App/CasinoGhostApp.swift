@@ -164,7 +164,7 @@ enum ScreenshotDirector {
             if t.phase == .insurance { t.insurance(false) }
             while t.busy { try? await Task.sleep(nanoseconds: 50_000_000) }
             // stop at an interesting decision after a few rounds
-            if round >= 12, t.phase == .player, t.state.hands.first.map({ $0.total >= 12 && $0.total <= 16 }) == true {
+            if round >= 8, t.phase == .player, t.state.hands.first.map({ $0.total >= 12 && $0.total <= 16 }) == true {
                 return
             }
             while t.phase == .player {
