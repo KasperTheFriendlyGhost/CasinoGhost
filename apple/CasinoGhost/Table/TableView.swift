@@ -356,13 +356,15 @@ struct FeltBackground: View {
         ZStack {
             shape.fill(RadialGradient(colors: [Theme.feltHi, Theme.feltLo], center: UnitPoint(x: 0.5, y: 0.25), startRadius: 10, endRadius: 520))
             Canvas { ctx, size in
+                // larger print on a big felt; the arc sits between the dealer and the player
+                let k = min(1.5, max(1, size.width / 560))
                 let lines: [(String, CGFloat, CGFloat)] = [
-                    ("BLACKJACK PAYS \(rules.bjLabel.replacingOccurrences(of: ":", with: " TO "))", 15, 0.0),
-                    (rules.h17 ? "DEALER MUST HIT SOFT 17" : "DEALER MUST STAND ON SOFT 17", 10, 26),
-                    ("INSURANCE PAYS 2 TO 1", 10, 46),
+                    ("BLACKJACK PAYS \(rules.bjLabel.replacingOccurrences(of: ":", with: " TO "))", 15 * k, 0.0),
+                    (rules.h17 ? "DEALER MUST HIT SOFT 17" : "DEALER MUST STAND ON SOFT 17", 10 * k, 26 * k),
+                    ("INSURANCE PAYS 2 TO 1", 10 * k, 46 * k),
                 ]
                 let center = CGPoint(x: size.width / 2, y: size.height * 0.02)
-                let base = size.width * 0.62
+                let base = min(size.width * 0.62, size.height * 0.43)
                 for (text, font, extra) in lines {
                     let radius = base + extra
                     let chars = Array(text)

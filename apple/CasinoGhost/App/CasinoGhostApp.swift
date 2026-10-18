@@ -88,7 +88,7 @@ struct TableScreen: View {
                             VStack(spacing: 14) {
                                 FeltView(model: app.table, width: geo.size.width - 24)
                                 if app.settings.showDashboard {
-                                    DashboardView(model: app.table).id("dashboard")
+                                    DashboardView(model: app.table, columns: geo.size.width >= 760 ? 2 : 1).id("dashboard")
                                 }
                             }
                             .padding(.horizontal, 12)

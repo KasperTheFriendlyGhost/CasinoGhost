@@ -5,17 +5,38 @@ import CasinoGhostCore
 /// Widgets beside or under the table.
 struct DashboardView: View {
     let model: TableModel
+    /// Two columns under a wide table (iPad in portrait), one beside it or on iPhone.
+    var columns = 1
 
     var body: some View {
-        VStack(spacing: 14) {
-            EdgeGaugeCard(model: model)
-            CountsCard(model: model)
-            AccuracyCard(stats: model.state.stats)
-            ErrorsCard(model: model)
-            SideBetsCard(model: model)
-            SessionCard(model: model)
-            StatsCard(stats: model.state.stats, elapsedMs: model.state.elapsedMs)
-            LogCard(log: model.log)
+        if columns > 1 {
+            VStack(spacing: 14) {
+                EdgeGaugeCard(model: model, wide: true)
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(spacing: 14) {
+                        CountsCard(model: model)
+                        ErrorsCard(model: model)
+                        SessionCard(model: model)
+                    }
+                    VStack(spacing: 14) {
+                        AccuracyCard(stats: model.state.stats)
+                        SideBetsCard(model: model)
+                        StatsCard(stats: model.state.stats, elapsedMs: model.state.elapsedMs)
+                    }
+                }
+                LogCard(log: model.log)
+            }
+        } else {
+            VStack(spacing: 14) {
+                EdgeGaugeCard(model: model)
+                CountsCard(model: model)
+                AccuracyCard(stats: model.state.stats)
+                ErrorsCard(model: model)
+                SideBetsCard(model: model)
+                SessionCard(model: model)
+                StatsCard(stats: model.state.stats, elapsedMs: model.state.elapsedMs)
+                LogCard(log: model.log)
+            }
         }
     }
 }

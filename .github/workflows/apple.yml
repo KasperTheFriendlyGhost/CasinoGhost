@@ -109,10 +109,13 @@ jobs:
             xcrun simctl status_bar "$DEV" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 || true
             xcrun simctl install "$DEV" "$APP"
             KIND=$([ "$DEV" = "$PHONE" ] && echo phone || echo pad)
+            # warm-up launch: calibrates the edge gauge (then cached) and lets first-boot system
+            # banners come and go before any screenshot
+            xcrun simctl launch "$DEV" com.casinoghost.app -screenshot dashboard
+            sleep 45
             for SCREEN in table dashboard lab strategy rules settings; do
               xcrun simctl launch --terminate-running-process "$DEV" com.casinoghost.app -screenshot "$SCREEN"
-              # the dashboard waits for the edge gauge to calibrate (cached after the first run)
-              sleep $([ "$SCREEN" = dashboard ] && echo 30 || echo 9)
+              sleep 10
               xcrun simctl io "$DEV" screenshot "shots/$KIND-$SCREEN.png"
             done
             xcrun simctl shutdown "$DEV" || true

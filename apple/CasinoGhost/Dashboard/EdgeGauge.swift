@@ -100,6 +100,8 @@ struct EdgeGauge: View {
     let bankroll: Double
     let minBet: Double
     let calibrating: Double?
+    /// Dial beside the curve, for wide cards.
+    var wide = false
 
     private var scale: DialScale {
         DialScale(min: Swift.min(-0.02, offTheTop - 0.005), max: 0.03)
@@ -107,25 +109,21 @@ struct EdgeGauge: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            dial
-                .frame(height: 210)
-                .padding(.bottom, 12)
-            if let profile {
-                EdgeCurveStrip(profile: profile, count: count, prefix: prefix)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-            HStack(spacing: 0) {
-                stat("Break-even", breakEven.map { "\(prefix) \(Fmt.count($0))" } ?? "—")
-                Divider().frame(height: 28)
-                stat("Off the top", Fmt.pct(offTheTop))
-                Divider().frame(height: 28)
-                if let exact {
-                    stat("True edge now", Fmt.pct(exact), color: color(exact))
-                } else if let band {
-                    stat("Real range", "\(Fmt.pct(band.low, digits: 1)) to \(Fmt.pct(band.high, digits: 1))")
-                } else {
-                    stat("Kelly bet", kelly)
+            if wide {
+                HStack(alignment: .center, spacing: 24) {
+                    dial
+                        .frame(width: 300, height: 230)
+                    VStack(spacing: 14) {
+                        curve
+                        statsRow
+                    }
                 }
+            } else {
+                dial
+                    .frame(height: 210)
+                    .padding(.bottom, 12)
+                curve
+                statsRow
             }
             if let calibrating {
                 VStack(spacing: 4) {
@@ -137,6 +135,29 @@ struct EdgeGauge: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Edge \(Fmt.pct(edge)) at \(countText)")
+    }
+
+    @ViewBuilder private var curve: some View {
+        if let profile {
+            EdgeCurveStrip(profile: profile, count: count, prefix: prefix)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+    }
+
+    private var statsRow: some View {
+        HStack(spacing: 0) {
+            stat("Break-even", breakEven.map { "\(prefix) \(Fmt.count($0))" } ?? "—")
+            Divider().frame(height: 28)
+            stat("Off the top", Fmt.pct(offTheTop))
+            Divider().frame(height: 28)
+            if let exact {
+                stat("True edge now", Fmt.pct(exact), color: color(exact))
+            } else if let band {
+                stat("Real range", "\(Fmt.pct(band.low, digits: 1)) to \(Fmt.pct(band.high, digits: 1))")
+            } else {
+                stat("Kelly bet", kelly)
+            }
+        }
     }
 
     private var kelly: String {
@@ -256,6 +277,7 @@ private struct ExactMarker: Shape {
 struct EdgeGaugeCard: View {
     @Environment(AppModel.self) private var app
     let model: TableModel
+    var wide = false
 
     var body: some View {
         let s = app.settings
@@ -275,7 +297,8 @@ struct EdgeGaugeCard: View {
                 offTheTop: model.state.baseEdge,
                 bankroll: model.state.bankroll,
                 minBet: s.table.minBet,
-                calibrating: app.analysis.edgeProgress
+                calibrating: app.analysis.edgeProgress,
+                wide: wide
             )
             Text(explanation(curve))
                 .font(.caption)
