@@ -19,5 +19,5 @@ fn main() {
     println!("dealer_dist: {:.1} µs each ({x:.1})", t.elapsed().as_secs_f64() * 1e6 / m as f64);
     let t = Instant::now();
     for _ in 0..m { x += ca::eval_cell(&rules, false, ca::Kind::Hard, 16, 10, &comp)[0]; }
-    println!("eval_cell hard16v10: {:.1} µs each", t.elapsed().as_secs_f64() * 1e6 / m as f64);
+    println!("eval_cell hard16v10: {:.1} µs each ({x:.1})", t.elapsed().as_secs_f64() * 1e6 / m as f64);
 }
