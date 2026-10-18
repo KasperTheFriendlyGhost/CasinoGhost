@@ -154,6 +154,8 @@ export class Game {
   private sideEVBefore: Record<SideBetId, number> = { pp: 0, t213: 0, ll: 0 };
   /** Net result of the current/last round, side bets included. */
   roundNet = 0;
+  /** The player hit, stood, doubled, split or surrendered this round (false if it ended on the deal). */
+  acted = false;
   private roundStart = { bet: 0, sideStake: 0, tc: 0, sideEV: 0, sideVar: 0 };
   // Session clock: active time excludes pauses.
   private clockBase = 0;
@@ -297,6 +299,7 @@ export class Game {
     this.lastDecision = null;
     this.roundNet = 0;
     this.holeRevealed = false;
+    this.acted = false;
 
     const p1 = this.draw(), up = this.draw(), p2 = this.draw(), hole = this.draw(false);
     this.dealer = [up, hole];
@@ -348,6 +351,7 @@ export class Game {
     const ok = action === ACT.HIT ? lg.hit : action === ACT.STAND ? lg.stand : action === ACT.DOUBLE ? lg.double : action === ACT.SPLIT ? lg.split : lg.surrender;
     if (!ok) return;
 
+    this.acted = true;
     // Grade before acting.
     const best = this.correctPlay(h);
     const vals = best.vals;

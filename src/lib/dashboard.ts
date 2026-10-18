@@ -2,7 +2,7 @@ import { createContext, useContext } from 'react';
 import { usePref } from './settings';
 
 export type WidgetId =
-  | 'counts' | 'decks' | 'errors' | 'accuracy' | 'stats' | 'stopwatch' | 'speed' | 'heat' | 'curve'
+  | 'counts' | 'gauges' | 'decks' | 'errors' | 'accuracy' | 'stats' | 'stopwatch' | 'speed' | 'heat' | 'curve'
   | 'sidebets' | 'chart-bankroll' | 'chart-count' | 'chart-bets' | 'chart-errors' | 'log';
 
 export type Side = 'left' | 'right';
@@ -31,6 +31,7 @@ export interface DashboardConfig {
 
 export const WIDGETS: Record<WidgetId, { name: string; blurb: string }> = {
   counts: { name: 'Counts', blurb: 'Running count, true count and decks left' },
+  gauges: { name: 'Gauges', blurb: 'True count, your edge, shoe dealt and accuracy as dials' },
   decks: { name: 'Deck estimation', blurb: 'Judge the decks left from the discard tray, graded' },
   errors: { name: 'Cost of errors', blurb: 'What your mistakes have cost, in dollars' },
   sidebets: { name: 'Side-bet edges', blurb: 'Exact edge of each side bet for the next round' },
@@ -47,8 +48,8 @@ export const WIDGETS: Record<WidgetId, { name: string; blurb: string }> = {
   log: { name: 'Recent decisions', blurb: 'Your last decisions, graded' },
 };
 
-const ORDER: WidgetId[] = ['counts', 'decks', 'errors', 'sidebets', 'accuracy', 'log', 'stats', 'stopwatch', 'speed', 'heat', 'curve', 'chart-bankroll', 'chart-count', 'chart-bets', 'chart-errors'];
-const DEFAULT_ON = new Set<WidgetId>(['counts', 'decks', 'errors', 'sidebets', 'accuracy', 'log', 'speed', 'heat', 'chart-bankroll']);
+const ORDER: WidgetId[] = ['counts', 'gauges', 'decks', 'errors', 'sidebets', 'accuracy', 'log', 'stats', 'stopwatch', 'speed', 'heat', 'curve', 'chart-bankroll', 'chart-count', 'chart-bets', 'chart-errors'];
+const DEFAULT_ON = new Set<WidgetId>(['counts', 'gauges', 'decks', 'errors', 'sidebets', 'accuracy', 'log', 'speed', 'heat', 'chart-bankroll']);
 const DEFAULT_LEFT = new Set<WidgetId>(['speed', 'heat', 'chart-bankroll', 'stats', 'stopwatch', 'curve', 'chart-count', 'chart-bets', 'chart-errors']);
 
 export function defaultDashboard(): DashboardConfig {

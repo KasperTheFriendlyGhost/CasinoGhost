@@ -5,9 +5,11 @@
    Dark-first: a card room at night. Light theme keeps the felt and swaps the room around it. */
 :root {
   color-scheme: dark;
-  --bg: #121513;
-  --panel: #1a1e1c;
-  --panel-2: #232825;
+  --bg: #101412;
+  --bg-glow: rgba(46, 92, 72, 0.32);
+  --panel: #181d1b;
+  --panel-2: #212724;
+  --panel-hi: rgba(255, 255, 255, 0.045);
   --line: rgba(255, 255, 255, 0.09);
   --line-strong: rgba(255, 255, 255, 0.16);
   --fg: #eeeae0;
@@ -32,7 +34,9 @@
   --card-edge: rgba(0, 0, 0, 0.18);
   --card-red: #c4222b;
   --card-black: #17191b;
-  --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 10px 30px rgba(0, 0, 0, 0.35);
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 18px 40px -18px rgba(0, 0, 0, 0.7), 0 2px 6px -2px rgba(0, 0, 0, 0.35);
+  --brass-hi: #ecca80;
+  --brass-lo: #b98a37;
 
   --font-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
   --font-body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -43,6 +47,8 @@
   :root:not([data-theme="dark"]) {
     color-scheme: light;
     --bg: #e9e7df;
+    --bg-glow: rgba(255, 255, 255, 0.7);
+    --panel-hi: rgba(255, 255, 255, 0.6);
     --panel: #f8f7f2;
     --panel-2: #efede6;
     --line: rgba(25, 25, 10, 0.1);
@@ -64,12 +70,16 @@
     --series-neg: #e34948;
     --grid: #e1e0d9;
     --axis: #c3c2b7;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(40, 35, 20, 0.08);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 18px 40px -20px rgba(40, 35, 20, 0.28);
+    --brass-hi: #b8892f;
+    --brass-lo: #8a6418;
   }
 }
 :root[data-theme="light"] {
   color-scheme: light;
   --bg: #e9e7df;
+  --bg-glow: rgba(255, 255, 255, 0.7);
+  --panel-hi: rgba(255, 255, 255, 0.6);
   --panel: #f8f7f2;
   --panel-2: #efede6;
   --line: rgba(25, 25, 10, 0.1);
@@ -91,7 +101,9 @@
   --series-neg: #e34948;
   --grid: #e1e0d9;
   --axis: #c3c2b7;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(40, 35, 20, 0.08);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 18px 40px -20px rgba(40, 35, 20, 0.28);
+  --brass-hi: #b8892f;
+  --brass-lo: #8a6418;
 }
 
 @theme inline {
@@ -121,7 +133,7 @@
 html, body, #root { min-height: 100%; }
 body {
   margin: 0;
-  background: var(--bg);
+  background: radial-gradient(1200px 520px at 50% -120px, var(--bg-glow), transparent 70%) no-repeat, var(--bg);
   color: var(--fg);
   font-family: var(--font-body);
   font-size: 15px;
@@ -150,31 +162,53 @@ h1, h2, h3 { text-wrap: balance; }
   padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
 .panel {
-  background: var(--panel);
+  background: linear-gradient(180deg, var(--panel-hi), transparent 120px), var(--panel);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 18px;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
+.panel:hover { border-color: var(--line-strong); }
+.btn-brass {
+  background: linear-gradient(180deg, var(--brass-hi), var(--brass-lo));
+  color: var(--brass-ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 6px 16px -6px rgba(214, 172, 82, 0.55);
+}
+.btn-brass:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+.btn-brass:active:not(:disabled) { transform: translateY(0); filter: brightness(0.97); }
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
 :focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
 button { cursor: pointer; touch-action: manipulation; }
 .chip { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 button:disabled { cursor: not-allowed; }
 
 /* The felt: baize colour, a soft spotlight, and a faint woven texture. */
+/* Baize: a pool of light from above, darker edges, and a fine woven grain. */
 .felt {
   background:
-    radial-gradient(120% 90% at 50% 0%, rgba(255, 255, 255, 0.10), transparent 60%),
-    radial-gradient(140% 120% at 50% 110%, rgba(0, 0, 0, 0.35), transparent 60%),
-    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.018) 0 2px, transparent 2px 4px),
+    radial-gradient(90% 70% at 50% 18%, rgba(255, 255, 255, 0.11), transparent 70%),
+    radial-gradient(140% 120% at 50% 115%, rgba(0, 0, 0, 0.42), transparent 62%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E"),
     var(--felt);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35), inset 0 2px 30px rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4), inset 0 0 0 7px rgba(0, 0, 0, 0.08), inset 0 0 0 8px rgba(226, 194, 122, 0.22), inset 0 6px 40px rgba(0, 0, 0, 0.38);
 }
 .felt-shape { border-bottom-left-radius: 46% 26%; border-bottom-right-radius: 46% 26%; }
 @media (max-width: 640px) {
   .felt-shape { border-bottom-left-radius: 50% 10%; border-bottom-right-radius: 50% 10%; }
 }
+/* Padded leather rail with stitching. */
 .rail {
-  background: linear-gradient(180deg, #4a2f1c, #2d1b0f);
-  box-shadow: inset 0 1px 0 rgba(255, 220, 170, 0.25), 0 10px 30px rgba(0, 0, 0, 0.35);
+  background:
+    radial-gradient(120% 60% at 50% 0%, rgba(255, 210, 160, 0.16), transparent 60%),
+    linear-gradient(180deg, #4b2e1b, #2a180c 70%, #22130a);
+  box-shadow: inset 0 1px 0 rgba(255, 220, 170, 0.3), inset 0 -2px 6px rgba(0, 0, 0, 0.5), 0 24px 50px -24px rgba(0, 0, 0, 0.75);
+}
+.rail::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 24px;
+  border: 1px dashed rgba(255, 214, 160, 0.2);
+  pointer-events: none;
 }
 
 input[type="range"] { accent-color: var(--brass); }

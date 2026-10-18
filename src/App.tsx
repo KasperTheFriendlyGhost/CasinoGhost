@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useSettings } from './lib/settings';
 import { rulesSummary } from './engine/strategy';
 import { cx } from './lib/format';
@@ -55,16 +55,21 @@ export function App() {
       </header>
 
       <main className="gutter mx-auto w-full max-w-[1400px] flex-1 py-4 sm:py-6">
-        {route === 'play' && <Play settings={settings} />}
-        {route === 'lab' && <Lab settings={settings} setPays={(id, pays) => update({ pays: { ...settings.pays, [id]: pays } })} />}
-        {route === 'strategy' && <Strategy settings={settings} />}
-        {route === 'rules' && <Rules settings={settings} updateRules={updateRules} setDeviations={(deviations) => update({ deviations })} setLimits={(limits) => update({ limits })} />}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div key={route} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}>
+            {route === 'play' && <Play settings={settings} />}
+            {route === 'lab' && <Lab settings={settings} setPays={(id, pays) => update({ pays: { ...settings.pays, [id]: pays } })} />}
+            {route === 'strategy' && <Strategy settings={settings} />}
+            {route === 'rules' && <Rules settings={settings} updateRules={updateRules} setDeviations={(deviations) => update({ deviations })} setLimits={(limits) => update({ limits })} />}
+          </motion.div>
+        </AnimatePresence>
       </main>
 
       <footer className="gutter mx-auto w-full max-w-[1400px] pb-6 text-xs text-muted">
         <p>
           A training and analysis tool. Results are mathematical estimates; casinos may restrict or bar card counters. Strategy engine adapted from{' '}
-          <a className="underline hover:text-fg" href="https://github.com/noahskahn/cutcard" target="_blank" rel="noreferrer">cutcard</a> (MIT).
+          <a className="underline hover:text-fg" href="https://github.com/noahskahn/cutcard" target="_blank" rel="noreferrer">cutcard</a> (MIT). Card faces by{' '}
+          <a className="underline hover:text-fg" href="https://www.me.uk/cards/" target="_blank" rel="noreferrer">Adrian Kennard</a> (CC0).
         </p>
       </footer>
     </div>

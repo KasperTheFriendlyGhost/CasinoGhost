@@ -4,13 +4,13 @@ import { BJ_PAYS } from '../engine/strategy';
 const PAYS_WORDS: Record<string, string> = { '3:2': '3 TO 2', '6:5': '6 TO 5', '7:5': '7 TO 5', '2:1': '2 TO 1', '1:1': 'EVEN MONEY' };
 
 /** The table layout printing, generated from the rules in play. */
-export function FeltPrint({ rules }: { rules: Rules }) {
+export function FeltPrint({ rules, dim = false }: { rules: Rules; dim?: boolean }) {
   const pays = (BJ_PAYS as Record<string, string>)[String(rules.bjPay)] ?? '3:2';
   const top = `BLACKJACK PAYS ${PAYS_WORDS[pays] ?? pays}`;
   const mid = rules.h17 ? 'DEALER MUST HIT SOFT 17' : 'DEALER MUST STAND ON ALL 17s';
   const low = rules.peek ? 'INSURANCE PAYS 2 TO 1' : 'NO HOLE CARD · INSURANCE PAYS 2 TO 1';
   return (
-    <div className="pointer-events-none mx-auto -mt-1 w-[min(84%,600px)] select-none sm:w-[min(92%,600px)]" aria-label={`${top}. ${mid}. ${low}.`}>
+    <div className={`pointer-events-none absolute inset-x-0 top-[52%] z-0 mx-auto w-[min(84%,520px)] -translate-y-1/2 select-none transition-opacity duration-500 ${dim ? 'opacity-30' : 'opacity-90'}`} aria-label={`${top}. ${mid}. ${low}.`}>
       <svg viewBox="0 0 600 150" className="block w-full" aria-hidden>
         <defs>
           <path id="arc1" d="M 40 30 Q 300 120 560 30" />

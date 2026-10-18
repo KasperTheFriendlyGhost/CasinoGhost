@@ -7,8 +7,8 @@ index plays, and exact, countable side bets (21+3, Perfect Pairs, Lucky Ladies).
 
 | Screen | What it does |
 |---|---|
-| **Table** | Animated table with a real dealing shoe (cut card included) and a clear discard tray that fill and empty to scale, so you can estimate decks by eye; your bankroll racked in chips on the rail. Every decision is graded against the strategy generated for your rules plus Hi-Lo index plays, with the dollar cost of each mistake. Running and true count pinned to the felt, table-limits placard, deal speed (slow to instant), pause, new shoe, and practice modes that hide the count or the decks-left numbers and quiz you. |
-| **Dashboard** | Widgets beside the table that you choose, place left or right, and reorder: counts, cost of errors, side-bet edges, accuracy rates (hard, soft, pairs, insurance, index plays), statistics grid, stopwatch, speedometer, heat, probability curve, and charts of bankroll, true count, bet vs. count and error cost. Session stats are kept between visits until you reset them (or reset on every launch). |
+| **Table** | A simulated dealer who announces the game, deals each card out of a red acrylic shoe (weight, cut card and all), peeks for blackjack, turns the hole card and draws at a realistic pace, pays or takes your chips, and sweeps the cards into a clear discard tray that fills to scale, so you can estimate decks by eye. Real playing cards with full court art; your bankroll racked in chips on a padded rail. Every decision is graded against the strategy generated for your rules plus Hi-Lo index plays, with the dollar cost of each mistake. Running and true count pinned to the felt, table-limits placard, deal speed (slow to instant), pause, new shoe, and practice modes that hide the count or the decks-left numbers and quiz you. |
+| **Dashboard** | Widgets beside the table that you choose, place left or right, and reorder: counts, gauges (true count, estimated edge, shoe dealt, accuracy), deck estimation, cost of errors, side-bet edges, accuracy rates (hard, soft, pairs, insurance, index plays), statistics grid, stopwatch, speedometer, heat, probability curve, and charts of bankroll, true count, bet vs. count and error cost. Session stats are kept between visits until you reset them (or reset on every launch). |
 | **Side Bet Lab** | Exact house edge for any paytable and deck count, the effect of removing each card, a best-fit balanced count derived automatically for the bet, and a 20,000-shoe simulation showing the edge at every true count, when to bet, and what it's worth against perfect card tracking. |
 | **Strategy** | Basic-strategy chart solved for the current rules, the house edge with perfect play, and the index plays in use. |
 | **Rules** | Presets, every rule as a control, table limits, and a plain-English rules box ("6 decks, dealer hits soft 17, late surrender"). |
@@ -62,6 +62,9 @@ npm run build:single # one self-contained HTML file in dist-single/
 - `src/engine/strategy.ts` — typed façade over the vendored strategy engine.
 - `src/engine/vendor/cutcard/` — exact blackjack EV engine, generated basic strategy and Hi-Lo
   deviations from [noahskahn/cutcard](https://github.com/noahskahn/cutcard) (MIT, see its `LICENSE`).
+- `src/assets/cards/` — card faces: Adrian Kennard's SVG playing cards (https://www.me.uk/cards/),
+  CC0 1.0, via [letele/playing-cards](https://github.com/letele/playing-cards).
+- `src/components/Dealer.tsx`, `ShoeTray.tsx` — dealer station, shoe and discard tray artwork.
 - UI: React 19, TypeScript, Tailwind CSS 4, Motion.
 
 ## Verification

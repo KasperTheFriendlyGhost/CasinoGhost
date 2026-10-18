@@ -13,6 +13,10 @@ import { PlayingCard } from '../components/PlayingCard';
 import { FeltPrint } from '../components/FeltPrint';
 import { DashboardColumn, DECK_GUESS_ID } from '../components/widgets';
 import { DealingShoe, DiscardTray } from '../components/ShoeTray';
+import { ChipRack, DealerFigure, DealerSays } from '../components/Dealer';
+import { AnchorsContext } from '../lib/tableAnchors';
+import { useTween } from '../lib/useTween';
+import { RANK_LABEL } from '../engine/cards';
 import { CustomizeDashboard } from '../components/CustomizeDashboard';
 
 type Spot = 'main' | SideBetId;
@@ -83,7 +87,19 @@ export function Play({ settings }: { settings: AppSettings }) {
   const setStake = (s: Spot, v: number) => (s === 'main' ? game.setBet(v) : game.setSideStake(s, v));
 
   const act = (code: ActionCode) => { setHint(null); game.act(code); };
-  const deal = () => { setHint(null); game.deal(); };
+  const [collecting, setCollecting] = useState(false);
+  const speedF = speedFactor(dash.speed);
+  const deal = () => {
+    if (collecting) return;
+    setHint(null);
+    if (game.phase === 'settled' && game.onTable > 0 && speedF > 0) {
+      setCollecting(true);
+      setTimeout(() => { setCollecting(false); game.deal(); }, (0.42 * speedF + 0.05) * 1000);
+    } else game.deal();
+  };
+  const shoeRef = useRef<HTMLSpanElement>(null);
+  const trayRef = useRef<HTMLButtonElement>(null);
+  const anchors = useMemo(() => ({ shoe: shoeRef, tray: trayRef }), []);
   const showHint = () => {
     const a = game.advice();
     if (!a) return;
@@ -145,6 +161,8 @@ export function Play({ settings }: { settings: AppSettings }) {
 
   const d = game.lastDecision;
   const showRound = phase === 'settled';
+  const timing = roundTiming(game);
+  const speech = dealerSpeech(game, timing.result);
   const left = widgetsFor(dash, 'left'), right = widgetsFor(dash, 'right');
   const wp = { game, cfg: dash, hideCount, setHideCount, evs, onPickSide: (id: SideBetId) => setSpot(id) };
   const grid = left.length && right.length
@@ -152,7 +170,8 @@ export function Play({ settings }: { settings: AppSettings }) {
     : left.length ? 'lg:grid-cols-[330px_minmax(0,1fr)]' : right.length ? 'lg:grid-cols-[minmax(0,1fr)_330px]' : '';
 
   return (
-    <SpeedContext.Provider value={speedFactor(dash.speed)}>
+    <SpeedContext.Provider value={speedF}>
+    <AnchorsContext.Provider value={anchors}>
     <div className={cx('grid items-start gap-4', grid)}>
       <section className="min-w-0 flex flex-col gap-3">
         {/* Toolbar */}
@@ -174,44 +193,55 @@ export function Play({ settings }: { settings: AppSettings }) {
           </div>
         </div>
         {/* Table */}
-        <div className="rail relative rounded-[28px] p-[10px] pb-[46px] sm:p-[14px] sm:pb-[52px]" style={{ ['--card-w' as string]: 'clamp(50px, 8.4vw, 88px)', ['--card-w-sm' as string]: 'clamp(42px, 6.4vw, 70px)' }}>
-          <div className="felt felt-shape relative flex min-h-[380px] flex-col overflow-hidden rounded-[20px] sm:min-h-[500px]">
-            <div className="absolute right-2 top-2 z-10 origin-top-right scale-[0.72] sm:right-4 sm:top-4 sm:scale-100">
-              <DealingShoe left={game.shoe.cardsLeft} size={game.shoe.size} cut={game.shoe.cut} decks={R.decks} showNumbers={dash.deckNumbers} />
+        <div className="rail relative rounded-[28px] p-[10px] pb-[46px] sm:p-[14px] sm:pb-[52px]" style={{ ['--card-w' as string]: 'clamp(52px, 7vw, 84px)', ['--card-w-sm' as string]: 'clamp(42px, 5.6vw, 68px)' }}>
+          <div className="felt felt-shape relative flex min-h-[380px] flex-col overflow-hidden rounded-[20px] sm:min-h-[540px]">
+            <FeltPrint rules={R} dim={game.onTable > 0 && !collecting} />
+            <TableCorner game={game} showCount={dash.pinCount && !hideCount} />
+            {/* Dealer's station, as on a real table: discard tray, dealer and chip rack, shoe */}
+            <div className="relative z-10 flex items-end justify-center gap-5 px-3 pt-2 md:gap-7">
+              <div className="absolute left-[92px] top-2 origin-top-left scale-[0.8] sm:static sm:scale-100">
+                <DiscardTray inTray={game.inTray} size={game.shoe.size} decks={R.decks} marks={dash.trayMarks} onClick={focusDeckGuess} trayRef={trayRef} />
+              </div>
+              <div className="hidden w-[min(220px,22vw)] md:block">
+                <div className="mx-auto w-[min(116px,13vw)]"><DealerFigure /></div>
+                <div className="-mt-[9px]"><ChipRack /></div>
+              </div>
+              <div className="absolute right-2 top-2 origin-top-right scale-[0.72] sm:static sm:scale-100">
+                <DealingShoe left={game.shoe.cardsLeft} size={game.shoe.size} cut={game.shoe.cut} decks={R.decks} showNumbers={dash.deckNumbers} mouthRef={shoeRef} />
+              </div>
             </div>
-            <TableCorner game={game} showCount={dash.pinCount && !hideCount} trayMarks={dash.trayMarks} onTray={focusDeckGuess} />
-            {/* Dealer */}
-            <div className="flex flex-col items-center gap-2 pt-[94px] sm:pt-5">
+            {/* Dealer's hand */}
+            <div className="relative z-10 flex flex-col items-center gap-1.5 pt-[96px] sm:pt-2">
               <div className="flex min-h-[calc(var(--card-w)*1.4)] items-start">
                 {game.dealer.map((c, i) => (
                   <div key={c.uid} style={{ marginLeft: i ? 'calc(var(--card-w) * -0.32)' : 0 }}>
-                    <PlayingCard card={c} faceDown={i === 1 && !game.holeRevealed} delay={i === 0 ? 0.15 : i === 1 ? 0.45 : (i - 1) * 0.35} />
+                    <PlayingCard card={c} faceDown={i === 1 && !game.holeRevealed} collect={collecting}
+                      delay={i === 0 ? 0.25 : i === 1 ? 0.75 : timing.draw(i)} flipDelay={timing.flip} peek={i === 1 && timing.peek} />
                   </div>
                 ))}
               </div>
               <TotalPill label={dealerLabel(game)} />
+              <DealerSays name="Ava" line={speech.line} lineKey={speech.key} delay={speech.delay * speedF} />
             </div>
 
-            <FeltPrint rules={R} />
-
             {/* Player hands */}
-            <div className="mt-auto flex flex-wrap items-end justify-center gap-x-6 gap-y-3 px-3 pb-3">
+            <div className="relative z-10 mt-auto flex flex-wrap items-end justify-center gap-x-6 gap-y-3 px-3 pb-1">
               {game.hands.map((h, i) => (
-                <HandView key={i} hand={h} active={game.activeHand === h} small={game.hands.length > 2} firstDeal={i === 0 && !h.fromSplit} showResult={showRound} />
+                <HandView key={i} hand={h} active={game.activeHand === h} small={game.hands.length > 2} firstDeal={i === 0 && !h.fromSplit} showResult={showRound} resultDelay={timing.result * speedF} collect={collecting} />
               ))}
             </div>
 
             {/* Betting spots */}
-            <div className="flex items-end justify-center gap-2 pb-7 pt-4 sm:gap-5 sm:pb-12 sm:pt-6">
+            <div className="relative z-10 flex items-end justify-center gap-2 pb-7 pt-4 sm:gap-5 sm:pb-10 sm:pt-5">
               {SIDE_IDS.slice(0, 2).map((id) => (
                 <SideSpot key={id} id={id} game={game} selected={canBet && spot === id} onSelect={() => setSpot(id)} />
               ))}
-              <BetSpot amount={game.mainBet} selected={canBet && spot === 'main'} onSelect={() => setSpot('main')} result={showRound ? game.roundNet : null} />
+              <BetSpot amount={game.mainBet} selected={canBet && spot === 'main'} onSelect={() => setSpot('main')} result={showRound && !collecting ? game.roundNet : null} resultDelay={timing.result * speedF} round={game.stats.rounds} />
               <SideSpot id="ll" game={game} selected={canBet && spot === 'll'} onSelect={() => setSpot('ll')} />
             </div>
 
           </div>
-          <BankrollRail bankroll={game.bankroll} delta={showRound ? game.roundNet : null} round={game.stats.rounds} />
+          <BankrollRail bankroll={game.bankroll} delta={showRound && !collecting ? game.roundNet : null} round={game.stats.rounds} delay={timing.result * speedF} />
         </div>
 
         {/* Controls */}
@@ -293,6 +323,7 @@ export function Play({ settings }: { settings: AppSettings }) {
         </aside>
       )}
     </div>
+    </AnchorsContext.Provider>
     {customizing && <CustomizeDashboard cfg={dash} update={updateDash} restoreDefaults={resetDash} onResetSession={resetSession} onClose={() => setCustomizing(false)} />}
     </SpeedContext.Provider>
   );
@@ -334,10 +365,10 @@ function ToolButton({ children, onClick, pressed, disabled, label }: { children:
 }
 
 /** Table-limits placard and the pinned running/true count, top-left of the felt. */
-function TableCorner({ game, showCount, trayMarks, onTray }: { game: Game; showCount: boolean; trayMarks: boolean; onTray: () => void }) {
+function TableCorner({ game, showCount }: { game: Game; showCount: boolean }) {
   const { min, max } = game.limits;
   return (
-    <div className="absolute left-2 top-2 z-10 flex origin-top-left scale-[0.8] items-start gap-3 sm:left-4 sm:top-4 sm:scale-100">
+    <div className="absolute left-2 top-2 z-20 flex origin-top-left scale-[0.8] items-start gap-3 sm:left-4 sm:top-4 sm:scale-100">
     <div className="flex flex-col items-start gap-2">
       <div className="rounded-md bg-[#f4efe2] px-2.5 py-1 text-center leading-none text-[#1b1a16] shadow-[0_3px_0_rgba(0,0,0,0.35)]">
         <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#6b5a2e]">Limits</div>
@@ -354,13 +385,13 @@ function TableCorner({ game, showCount, trayMarks, onTray }: { game: Game; showC
         </div>
       )}
     </div>
-    <DiscardTray inTray={game.inTray} size={game.shoe.size} decks={game.settings.rules.decks} marks={trayMarks} onClick={onTray} />
     </div>
   );
 }
 
 /** Chip rail in front of the seat: bankroll as chip stacks plus the amount. */
-function BankrollRail({ bankroll, delta, round }: { bankroll: number; delta: number | null; round: number }) {
+function BankrollRail({ bankroll, delta, round, delay }: { bankroll: number; delta: number | null; round: number; delay: number }) {
+  const shownBankroll = useTween(bankroll, 0.9);
   // Rack the bankroll like a player: up to 8 of each smaller chip, the rest in $500s.
   let rest = Math.max(0, bankroll);
   const counts = CHIPS.map((c, i) => {
@@ -382,11 +413,11 @@ function BankrollRail({ bankroll, delta, round }: { bankroll: number; delta: num
       </div>
       <div className="leading-none">
         <div className="text-[9px] font-bold uppercase tracking-[0.16em] text-[#d6ac52]">Bankroll</div>
-        <div className="tnum font-display text-[22px] font-extrabold text-[#f6eedb]">{money(bankroll)}</div>
+        <div className="tnum font-display text-[22px] font-extrabold text-[#f6eedb]">{money(Math.round(shownBankroll * 100) / 100)}</div>
       </div>
       <AnimatePresence>
         {delta !== null && delta !== 0 && (
-          <motion.span key={round} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ delay: 0.6 }}
+          <motion.span key={round} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ delay: delay + 0.3 }}
             className={cx('self-center rounded-full px-2 py-0.5 font-data text-xs font-bold', delta > 0 ? 'bg-[#e9fbe9] text-[#0d5c1f]' : 'bg-[#fde8e8] text-[#8a1c1c]')}>
             {delta > 0 ? '+' : ''}{money(delta)}
           </motion.span>
@@ -412,6 +443,52 @@ function KeyLegend() {
   );
 }
 
+/** When things happen in a round, in seconds at normal speed. */
+function roundTiming(g: Game) {
+  const settled = g.phase === 'settled';
+  const upV = g.dealer[0] ? valueOf(g.dealer[0].rank) : 0;
+  const peek = g.settings.rules.peek && (upV === 1 || upV === 10) && (g.phase === 'player' || (settled && !g.acted));
+  // Turn the hole card right away after the player's last move; if the round ended on the deal,
+  // wait for the deal (and the dealer's peek) to finish first.
+  const flip = settled ? (g.acted || g.insurance !== null ? 0.3 : peek ? 2.0 : 1.2) : 0;
+  const draw = (i: number) => (settled ? flip + 0.55 + (i - 2) * 0.6 : 0);
+  const result = settled ? (g.dealer.length > 2 ? draw(g.dealer.length - 1) + 0.5 : flip + 0.6) : 0;
+  return { flip, draw, result, peek };
+}
+
+const cardName = (rank: number) => (rank === 1 ? 'an ace' : rank === 8 ? 'an eight' : rank > 10 ? 'a ten' : `a ${RANK_LABEL[rank]}`);
+
+/** What the dealer says, and when (delay in seconds at normal speed). */
+function dealerSpeech(g: Game, resultDelay: number): { line: string; key: string; delay: number } {
+  const n = g.stats.rounds;
+  if (!g.dealer.length) return { line: g.justShuffled ? 'Fresh shoe. Place your bets, please.' : 'Place your bets, please.', key: `bets-${n}`, delay: 0 };
+  const up = g.dealer[0];
+  if (g.phase === 'insurance') return { line: 'Insurance? Dealer shows an ace.', key: `ins-${n}`, delay: 0.9 };
+  if (g.phase === 'player') {
+    const h = g.activeHand!;
+    const { eff, soft } = handInfo(h.cards.map((c) => valueOf(c.rank)));
+    const which = g.hands.length > 1 ? `Hand ${g.active + 1} of ${g.hands.length}: ` : '';
+    const peeked = g.settings.rules.peek && [1, 10].includes(valueOf(up.rank)) && !g.acted ? 'No blackjack. ' : '';
+    return { line: `${peeked}${which}${soft ? 'soft ' : ''}${eff} against ${cardName(up.rank)}.`, key: `p-${n}-${g.active}-${h.cards.length}`, delay: g.acted ? 0 : 1.0 };
+  }
+  if (g.phase === 'settled') {
+    const vals = g.dealer.map((c) => valueOf(c.rank));
+    const { eff } = handInfo(vals);
+    const dealerBJ = vals.length === 2 && eff === 21;
+    const outcomes = g.hands.map((h) => h.outcome);
+    let line: string;
+    if (outcomes.includes('blackjack')) line = 'Blackjack! Pays 3 to 2.'.replace('3 to 2', g.settings.rules.bjPay === 1.2 ? '6 to 5' : '3 to 2');
+    else if (dealerBJ) line = 'Dealer has blackjack.';
+    else if (g.hands.every((h) => h.outcome === 'bust')) line = 'Too many. Better luck next hand.';
+    else if (eff > 21) line = `Dealer busts with ${eff}.`;
+    else line = `Dealer has ${eff}.`;
+    const net = g.roundNet;
+    if (!outcomes.includes('blackjack')) line += net > 0 ? ` You win ${money(net)}.` : net < 0 ? '' : ' Push.';
+    return { line, key: `s-${n}`, delay: resultDelay };
+  }
+  return { line: '', key: 'none', delay: 0 };
+}
+
 const spotName = (s: Spot) => (s === 'main' ? 'Main bet' : SIDE_BETS[s].name);
 
 function dealerLabel(g: Game): string {
@@ -432,7 +509,7 @@ const OUTCOME: Record<string, { text: string; tone: 'good' | 'bad' | 'neutral' }
   lose: { text: 'Lose', tone: 'bad' }, bust: { text: 'Bust', tone: 'bad' }, surrender: { text: 'Surrendered', tone: 'neutral' },
 };
 
-function HandView({ hand, active, small, firstDeal, showResult }: { hand: Hand; active: boolean; small: boolean; firstDeal: boolean; showResult: boolean }) {
+function HandView({ hand, active, small, firstDeal, showResult, resultDelay, collect }: { hand: Hand; active: boolean; small: boolean; firstDeal: boolean; showResult: boolean; resultDelay: number; collect: boolean }) {
   const { eff, soft } = handInfo(hand.cards.map((c) => valueOf(c.rank)));
   const natural = !hand.fromSplit && hand.cards.length === 2 && eff === 21;
   const label = natural ? 'Blackjack' : eff > 21 ? `Bust · ${eff}` : `${soft && eff < 21 ? 'Soft ' : ''}${eff}`;
@@ -442,22 +519,22 @@ function HandView({ hand, active, small, firstDeal, showResult }: { hand: Hand; 
       <div className="flex">
         {hand.cards.map((c, i) => (
           <div key={c.uid} style={{ marginLeft: i ? `calc(var(${small ? '--card-w-sm' : '--card-w'}) * -0.58)` : 0, marginTop: i ? `calc(var(--card-w) * ${-0.0 + i * 0.06})` : 0 }}>
-            <PlayingCard card={c} small={small} delay={firstDeal && i === 0 ? 0 : firstDeal && i === 1 ? 0.3 : 0} />
+            <PlayingCard card={c} small={small} collect={collect} delay={firstDeal && i === 0 ? 0 : firstDeal && i === 1 ? 0.5 : 0} />
           </div>
         ))}
       </div>
       <div className="flex items-center gap-1.5">
         <TotalPill label={label} />
         {hand.doubled && <span className="rounded-full bg-brass px-2 py-0.5 text-[11px] font-bold text-brass-ink">2×</span>}
+        <AnimatePresence>
+          {o && (
+            <motion.span initial={{ opacity: 0, x: -6, scale: 0.9 }} animate={{ opacity: 1, x: 0, scale: 1 }} transition={{ delay: resultDelay }}
+              className={cx('whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-bold shadow', o.tone === 'good' ? 'bg-[#e9fbe9] text-[#0d5c1f]' : o.tone === 'bad' ? 'bg-[#fde8e8] text-[#8a1c1c]' : 'bg-[#f1efe8] text-[#3b3a35]')}>
+              {o.text}{hand.net ? ` ${signed(hand.net, hand.net % 1 ? 1 : 0)}` : ''}
+            </motion.span>
+          )}
+        </AnimatePresence>
       </div>
-      <AnimatePresence>
-        {o && (
-          <motion.div initial={{ opacity: 0, y: 6, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ delay: 0.5 }}
-            className={cx('absolute -top-3 rounded-full px-2.5 py-0.5 text-xs font-bold shadow', o.tone === 'good' ? 'bg-[#e9fbe9] text-[#0d5c1f]' : o.tone === 'bad' ? 'bg-[#fde8e8] text-[#8a1c1c]' : 'bg-[#f1efe8] text-[#3b3a35]')}>
-            {o.text}{hand.net ? ` ${signed(hand.net, hand.net % 1 ? 1 : 0)}` : ''}
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
@@ -474,13 +551,25 @@ function ChipStack({ amount }: { amount: number }) {
   );
 }
 
-function BetSpot({ amount, selected, onSelect, result }: { amount: number; selected: boolean; onSelect: () => void; result: number | null }) {
+function BetSpot({ amount, selected, onSelect, result, resultDelay, round }: { amount: number; selected: boolean; onSelect: () => void; result: number | null; resultDelay: number; round: number }) {
+  const won = result !== null && result > 0, lost = result !== null && result < 0;
   return (
     <button data-bet-control="1" onClick={onSelect} className={cx('relative grid place-items-center rounded-full border-2 transition-colors', selected ? 'border-brass bg-black/15' : 'border-[rgba(255,240,205,0.4)]')} style={{ width: 'clamp(68px, 15vw, 92px)', aspectRatio: '1' }} aria-label={`Main bet ${money(amount)}`}>
-      {amount > 0 ? <ChipStack amount={amount} /> : <span className="font-display text-sm font-bold tracking-widest text-[var(--felt-ink)]">BET</span>}
+      {amount > 0 ? (
+        <motion.div key={`bet-${round}-${lost}`} initial={false} animate={lost ? { y: -240, opacity: 0, scale: 0.7 } : { y: 0, opacity: 1, scale: 1 }}
+          transition={{ delay: lost ? resultDelay : 0, duration: lost ? 0.55 : 0.2, ease: [0.4, 0, 0.2, 1] }}>
+          <ChipStack amount={amount} />
+        </motion.div>
+      ) : <span className="font-display text-sm font-bold tracking-widest text-[var(--felt-ink)]">BET</span>}
+      {won && (
+        <motion.div key={`pay-${round}`} className="absolute left-[58%] top-[18%]" initial={{ y: -240, opacity: 0, scale: 0.7 }} animate={{ y: 0, opacity: 1, scale: 1 }}
+          transition={{ delay: resultDelay, duration: 0.55, ease: [0.2, 0.8, 0.2, 1] }}>
+          <ChipStack amount={result!} />
+        </motion.div>
+      )}
       <span className="absolute -bottom-6 whitespace-nowrap font-data text-xs text-[#f6eedb]">{money(amount)}</span>
       {result !== null && (
-        <motion.span key={result} initial={{ opacity: 0, y: 0 }} animate={{ opacity: 1, y: -6 }} transition={{ delay: 0.7 }}
+        <motion.span key={result} initial={{ opacity: 0, y: 0 }} animate={{ opacity: 1, y: -6 }} transition={{ delay: resultDelay + 0.2 }}
           className={cx('absolute -top-7 rounded-full px-2 py-0.5 font-data text-xs font-bold', result > 0 ? 'bg-[#e9fbe9] text-[#0d5c1f]' : result < 0 ? 'bg-[#fde8e8] text-[#8a1c1c]' : 'bg-[#f1efe8] text-[#3b3a35]')}>
           {result > 0 ? '+' : ''}{money(result)}
         </motion.span>
@@ -497,7 +586,7 @@ function SideSpot({ id, game, selected, onSelect }: { id: SideBetId; game: Game;
       {stake > 0 ? <div className="scale-75"><ChipStack amount={stake} /></div> : <span className="font-display text-[13px] font-bold tracking-wider text-[var(--felt-ink)]">{SIDE_BETS[id].short}</span>}
       {stake > 0 && <span className="absolute -bottom-5 font-data text-[11px] text-[#f6eedb]">{money(stake)}</span>}
       {res && (
-        <motion.span initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.6 }}
+        <motion.span initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 1.1 }}
           className={cx('absolute -top-6 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold', res.key ? 'bg-brass text-brass-ink' : 'bg-black/40 text-[#e9e2cf]')}>
           {res.key ? `Wins ${res.net}:1` : 'No win'}
         </motion.span>
@@ -520,7 +609,7 @@ function Btn({ children, onClick, primary, disabled, kbd, big, className }: { ch
   return (
     <button onClick={onClick} disabled={disabled}
       className={cx('inline-flex items-center gap-2 rounded-full border font-semibold transition-all', big ? 'px-6 py-3 text-base' : 'px-4 py-2 text-sm',
-        primary ? 'border-transparent bg-brass text-brass-ink hover:brightness-110' : 'border-line-strong bg-panel-2 text-fg hover:border-brass',
+        primary ? 'border-transparent btn-brass' : 'border-line-strong bg-panel-2 text-fg hover:border-brass',
         disabled && 'opacity-35 hover:brightness-100', className)}>
       {children}
       {kbd && <kbd className={cx('hidden rounded px-1.5 font-data text-[10px] sm:inline', primary ? 'bg-black/15' : 'bg-black/10 text-muted')}>{kbd}</kbd>}

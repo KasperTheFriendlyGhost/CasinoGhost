@@ -49,7 +49,7 @@ export function Rules({ settings, updateRules, setDeviations, setLimits }: Props
           <div className="flex flex-col gap-2 sm:flex-row">
             <input id="rules-text" value={text} onChange={(e) => setText(e.target.value)} placeholder="6 decks, dealer hits soft 17, late surrender, 3:2"
               className="min-w-0 flex-1 rounded-lg border border-line-strong bg-panel-2 px-3 py-2 text-fg" />
-            <button className="rounded-lg bg-brass px-4 py-2 font-semibold text-brass-ink">Apply</button>
+            <button className="rounded-lg btn-brass px-4 py-2 font-semibold">Apply</button>
           </div>
           <p className="mt-2 text-xs text-muted">Shorthand works too: 6D H17 DAS LS 3:2 PEN:80%</p>
           {parsed && (

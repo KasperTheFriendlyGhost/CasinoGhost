@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTween } from '../lib/useTween';
 import { useWidth } from './charts';
 
 const nice = (span: number) => {
@@ -143,22 +144,64 @@ export function BellCurve({ expected, sd, actual, format }: { expected: number; 
   );
 }
 
-/** Semicircular gauge. */
-export function Gauge({ value, max, label, bands }: { value: number; max: number; label: string; bands?: { to: number; color: string }[] }) {
-  const W = 250, H = 132, cx = W / 2, cy = 114, r = 88;
-  const ang = (v: number) => Math.PI * (1 - Math.min(1, Math.max(0, v / max)));
-  const pt = (v: number, rr = r) => [cx + rr * Math.cos(ang(v)), cy - rr * Math.sin(ang(v))];
-  const arc = (a: number, b: number) => { const [x0, y0] = pt(a), [x1, y1] = pt(b); return `M${x0},${y0} A${r},${r} 0 0 1 ${x1},${y1}`; };
-  const [nx, ny] = pt(value, r - 14);
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * max);
-  let from = 0;
+export interface DialZone { from: number; to: number; color: string }
+
+interface DialProps {
+  value: number;
+  min: number;
+  max: number;
+  zones?: DialZone[];
+  /** Text in the centre (defaults to the value). */
+  display?: string;
+  label: string;
+  /** Small line under the label. */
+  sub?: string;
+  /** Major tick values to label. */
+  ticks?: number[];
+  tickFormat?: (v: number) => string;
+  /** Optional marker on the scale (e.g. the cut card). */
+  marker?: { at: number; label: string };
+}
+
+/** 240° instrument dial: coloured zones, ticks, a sprung needle and a readout. */
+export function Dial({ value, min, max, zones = [], display, label, sub, ticks, tickFormat = (v) => String(v), marker }: DialProps) {
+  const R = 74, CX = 100, CY = 96, START = 210, SWEEP = 240;
+  const clamp = (v: number) => Math.min(max, Math.max(min, v));
+  const angOf = (v: number) => START - ((clamp(v) - min) / (max - min)) * SWEEP; // degrees, 0 = east, ccw positive
+  const pt = (deg: number, r: number) => [CX + r * Math.cos((deg * Math.PI) / 180), CY - r * Math.sin((deg * Math.PI) / 180)];
+  const arc = (a: number, b: number, r: number) => {
+    const [x0, y0] = pt(angOf(a), r), [x1, y1] = pt(angOf(b), r);
+    const large = Math.abs(angOf(a) - angOf(b)) > 180 ? 1 : 0;
+    return `M${x0.toFixed(2)},${y0.toFixed(2)} A${r},${r} 0 ${large} 1 ${x1.toFixed(2)},${y1.toFixed(2)}`;
+  };
+  const majors = ticks ?? [min, (min + max) / 2, max];
+  const minors = Array.from({ length: 25 }, (_, i) => min + (i / 24) * (max - min));
+  // The needle glides to the new value; its geometry is computed so the base stays on the hub.
+  const shown = useTween(clamp(value), 0.8);
+  const a = (angOf(shown) * Math.PI) / 180;
+  const [tx, ty] = [CX + (R - 12) * Math.cos(a), CY - (R - 12) * Math.sin(a)];
+  const [px, py] = [3.2 * Math.sin(a), 3.2 * Math.cos(a)];
+  const needlePath = `M${(CX - px).toFixed(2)},${(CY - py).toFixed(2)} L${tx.toFixed(2)},${ty.toFixed(2)} L${(CX + px).toFixed(2)},${(CY + py).toFixed(2)} Z`;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="mx-auto block w-full max-w-[260px]" role="img" aria-label={label}>
-      <path d={arc(0, max)} fill="none" stroke="var(--grid)" strokeWidth="12" strokeLinecap="round" />
-      {(bands ?? [{ to: max, color: 'var(--series-pos)' }]).map((b) => { const p = <path key={b.to} d={arc(from, Math.min(b.to, value))} fill="none" stroke={b.color} strokeWidth="12" strokeLinecap="round" opacity={value > from ? 1 : 0} />; from = b.to; return p; })}
-      {ticks.map((t) => { const [x, y] = pt(t, r + 14); return <text key={t} x={x} y={y} textAnchor="middle" dy="0.32em" fontSize="10" fill="var(--muted)">{Math.round(t)}</text>; })}
-      <line x1={cx} y1={cy} x2={nx} y2={ny} stroke="var(--fg)" strokeWidth="3" strokeLinecap="round" style={{ transition: 'all .6s' }} />
-      <circle cx={cx} cy={cy} r="6" fill="var(--fg)" />
-    </svg>
+    <figure className="m-0 min-w-0">
+      <svg viewBox="0 0 200 150" className="block w-full" role="img" aria-label={`${label}: ${display ?? value}`}>
+        <defs>
+          <radialGradient id="dial-face" cx="50%" cy="60%" r="60%"><stop offset="0" stopColor="var(--panel-2)" /><stop offset="1" stopColor="var(--panel)" /></radialGradient>
+        </defs>
+        <circle cx={CX} cy={CY} r={R + 14} fill="url(#dial-face)" opacity="0.9" />
+        <path d={arc(min, max, R)} fill="none" stroke="var(--grid)" strokeWidth="9" strokeLinecap="round" />
+        {zones.map((z) => <path key={`${z.from}-${z.to}`} d={arc(z.from, z.to, R)} fill="none" stroke={z.color} strokeWidth="9" strokeLinecap="butt" opacity="0.9" />)}
+        {minors.map((v, i) => { const [x0, y0] = pt(angOf(v), R - 9), [x1, y1] = pt(angOf(v), R - (i % 6 === 0 ? 17 : 13)); return <line key={i} x1={x0} y1={y0} x2={x1} y2={y1} stroke="var(--muted)" strokeWidth={i % 6 === 0 ? 1.6 : 0.8} opacity="0.7" />; })}
+        {majors.map((v) => { const [x, y] = pt(angOf(v), R + 11); return <text key={v} x={x} y={y} dy="0.35em" textAnchor="middle" fontSize="10" fill="var(--muted)" className="tnum">{tickFormat(v)}</text>; })}
+        {marker && (() => { const [x0, y0] = pt(angOf(marker.at), R - 6), [x1, y1] = pt(angOf(marker.at), R + 6); return <line x1={x0} y1={y0} x2={x1} y2={y1} stroke="var(--fg)" strokeWidth="2.5" strokeLinecap="round"><title>{marker.label}</title></line>; })()}
+        <path d={needlePath} fill="var(--brass)" style={{ filter: 'drop-shadow(0 0 4px rgba(214,172,82,.55))' }} />
+        <circle cx={CX} cy={CY} r="6" fill="var(--fg)" /><circle cx={CX} cy={CY} r="2.5" fill="var(--panel)" />
+        <text x={CX} y={CY + 36} textAnchor="middle" fontSize="21" fontWeight="700" fill="var(--fg)" className="tnum" style={{ fontFamily: 'var(--font-display)' }}>{display ?? value}</text>
+      </svg>
+      <figcaption className="-mt-1 text-center">
+        <div className="label">{label}</div>
+        {sub && <div className="mt-0.5 text-[11px] text-muted">{sub}</div>}
+      </figcaption>
+    </figure>
   );
 }

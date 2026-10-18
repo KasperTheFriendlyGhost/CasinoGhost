@@ -7,8 +7,9 @@ import { SIDE_BETS, type SideBetId } from '../engine/sidebets';
 import { heat, luck, pace } from '../engine/session';
 import { WIDGETS, type DashboardConfig, type WidgetId } from '../lib/dashboard';
 import { usePref } from '../lib/settings';
+import { useTween } from '../lib/useTween';
 import { cx, edgePct, money, signed } from '../lib/format';
-import { BellCurve, Gauge, MiniLine, MiniScatter } from './MiniCharts';
+import { BellCurve, Dial, MiniLine, MiniScatter } from './MiniCharts';
 
 export interface WidgetProps {
   game: Game;
@@ -80,7 +81,7 @@ function CountsWidget({ game, cfg, hideCount, setHideCount }: WidgetProps) {
           <label htmlFor="rc-guess" className="text-sm text-fg-2">Keep the count yourself. What is the running count now?</label>
           <div className="flex gap-2">
             <input id="rc-guess" inputMode="numeric" value={guess} onChange={(e) => setGuess(e.target.value)} placeholder="e.g. −3" className="w-full min-w-0 rounded-lg border border-line-strong bg-panel-2 px-3 py-2 font-data text-fg" />
-            <button className="rounded-lg bg-brass px-3 font-semibold text-brass-ink">Check</button>
+            <button className="rounded-lg btn-brass px-3 font-semibold">Check</button>
           </div>
           {verdict && <p className={cx('text-sm font-semibold', verdict.ok ? 'text-good' : 'text-bad')}>{verdict.ok ? 'Correct.' : `Not quite: the running count is ${signed(verdict.rc)}.`}</p>}
         </form>
@@ -91,6 +92,34 @@ function CountsWidget({ game, cfg, hideCount, setHideCount }: WidgetProps) {
           <Stat label="Decks left" value={cfg.deckNumbers ? game.decksEst.toFixed(1) : '?'} big />
         </div>
       )}
+    </WidgetCard>
+  );
+}
+
+// ----- Gauges -------------------------------------------------------------------------------
+
+function GaugesWidget({ game }: WidgetProps) {
+  const tc = game.tcExact;
+  const edge = game.baseEdge + 0.005 * game.tc; // Hi-Lo rule of thumb: about +0.5% per true count
+  const dealt = (game.shoe.dealt / game.shoe.size) * 100;
+  const cut = (game.shoe.cut / game.shoe.size) * 100;
+  const s = game.stats;
+  const acc = s.decisions ? (s.correct / s.decisions) * 100 : 100;
+  const pctTick = (v: number) => `${v > 0 ? '+' : ''}${v}%`;
+  return (
+    <WidgetCard title="Gauges">
+      <div className="grid grid-cols-2 gap-x-2 gap-y-3">
+        <Dial value={tc} min={-6} max={6} display={signed(game.tc)} label="True count" ticks={[-6, 0, 6]} tickFormat={(v) => signed(v)}
+          zones={[{ from: -6, to: -1, color: 'var(--series-neg)' }, { from: 1, to: 6, color: 'var(--good)' }]} />
+        <Dial value={edge * 100} min={-2} max={3} display={`${edge >= 0 ? '+' : '−'}${Math.abs(edge * 100).toFixed(2)}%`} label="Your edge" sub="Estimated from the count"
+          ticks={[-2, 0, 3]} tickFormat={pctTick} zones={[{ from: -2, to: 0, color: 'var(--series-neg)' }, { from: 0, to: 3, color: 'var(--good)' }]} />
+        <Dial value={dealt} min={0} max={100} display={`${Math.round(dealt)}%`} label="Shoe dealt" sub={`Cut card at ${Math.round(cut)}%`}
+          ticks={[0, 50, 100]} tickFormat={(v) => `${v}%`} marker={{ at: cut, label: 'Cut card' }}
+          zones={[{ from: 0, to: cut, color: 'var(--series-pos)' }, { from: cut, to: 100, color: 'var(--warn)' }]} />
+        <Dial value={acc} min={50} max={100} display={s.decisions ? `${Math.round(acc)}%` : '—'} label="Accuracy" sub={`${s.decisions} decisions`}
+          ticks={[50, 75, 100]} tickFormat={(v) => `${v}%`}
+          zones={[{ from: 50, to: 85, color: 'var(--series-neg)' }, { from: 85, to: 95, color: 'var(--warn)' }, { from: 95, to: 100, color: 'var(--good)' }]} />
+      </div>
     </WidgetCard>
   );
 }
@@ -122,7 +151,7 @@ function DeckDrillWidget({ game }: WidgetProps) {
         <div className="flex gap-2">
           <input id={DECK_GUESS_ID} inputMode="decimal" value={guess} onChange={(e) => setGuess(e.target.value)} placeholder="e.g. 3.5"
             className="w-full min-w-0 rounded-lg border border-line-strong bg-panel-2 px-3 py-2 font-data text-fg" />
-          <button className="rounded-lg bg-brass px-3 font-semibold text-brass-ink">Check</button>
+          <button className="rounded-lg btn-brass px-3 font-semibold">Check</button>
         </div>
       </form>
       {last && (
@@ -144,13 +173,14 @@ function DeckDrillWidget({ game }: WidgetProps) {
 
 function ErrorsWidget({ game }: WidgetProps) {
   const s = game.stats;
+  const shown = useTween(s.evLost);
   const perHundred = s.rounds ? (s.evLost / s.rounds) * 100 : 0;
   return (
     <WidgetCard title="Cost of errors">
       <div className="rounded-xl bg-[#0b0d0c] px-4 py-3 shadow-[inset_0_2px_10px_rgba(0,0,0,0.6)]">
         <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#7d8a80]">Your mistakes have cost</div>
         <div className={cx('tnum font-data text-[38px] font-bold leading-tight', s.evLost > 0 ? 'text-[#ff6b5e]' : 'text-[#5ee07f]')} style={{ textShadow: '0 0 12px currentColor' }}>
-          ${s.evLost.toFixed(2).padStart(7, '0')}
+          ${shown.toFixed(2).padStart(7, '0')}
         </div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-3">
@@ -282,10 +312,9 @@ function SpeedWidget({ game }: WidgetProps) {
   const v = game.rounds.length >= 3 ? p.recent : 0;
   return (
     <WidgetCard title="Speedometer">
-      <Gauge value={v} max={300} label={`${Math.round(v)} rounds per hour`} bands={[{ to: 300, color: 'var(--series-pos)' }]} />
-      <div className="-mt-1 text-center">
-        <div className="tnum font-display text-3xl font-bold leading-none">{v ? Math.round(v) : '—'}</div>
-        <div className="mt-1 text-xs text-muted">rounds per hour · a busy casino table deals about 60–100</div>
+      <div className="mx-auto max-w-[240px]">
+        <Dial value={v} min={0} max={300} display={v ? String(Math.round(v)) : '—'} label="Rounds per hour" sub="A busy casino table deals about 60–100"
+          ticks={[0, 100, 200, 300]} zones={[{ from: 60, to: 120, color: 'var(--good)' }, { from: 120, to: 300, color: 'var(--series-pos)' }]} />
       </div>
     </WidgetCard>
   );
@@ -299,11 +328,11 @@ function HeatWidget({ game, cfg }: WidgetProps) {
   const color = h.level === 'Hot' ? 'var(--bad)' : h.level === 'Warm' ? 'var(--warn)' : 'var(--good)';
   return (
     <WidgetCard title="Heat" action={<span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold" style={{ color, background: 'var(--panel-2)' }}><Icon size={13} aria-hidden /> {h.rounds >= 10 ? h.level : 'Not enough rounds'}</span>}>
-      <div className="relative h-3 overflow-hidden rounded-full" style={{ background: 'linear-gradient(90deg, var(--good), var(--warn) 50%, var(--bad))', opacity: 0.85 }} aria-hidden>
-        <div className="absolute inset-y-0 right-0 bg-panel-2" style={{ left: `${h.score}%`, transition: 'left .5s' }} />
+      <div className="mx-auto max-w-[220px]">
+        <Dial value={h.score} min={0} max={100} display={String(h.score)} label="Heat score" ticks={[0, 30, 60, 100]}
+          zones={[{ from: 0, to: 30, color: 'var(--good)' }, { from: 30, to: 60, color: 'var(--warn)' }, { from: 60, to: 100, color: 'var(--bad)' }]} />
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-3">
-        <Stat label="Score" value={`${h.score}`} />
+      <div className="mt-3 grid grid-cols-2 gap-3">
         <Stat label="Bet ↔ count" value={h.rounds >= 3 ? h.correlation.toFixed(2) : '—'} />
         <Stat label="Spread" value={`1–${h.spread % 1 ? h.spread.toFixed(1) : h.spread}`} />
       </div>
@@ -381,6 +410,7 @@ function LogWidget({ game }: WidgetProps) {
 
 const RENDER: Record<WidgetId, (p: WidgetProps) => React.ReactNode> = {
   counts: (p) => <CountsWidget {...p} />,
+  gauges: (p) => <GaugesWidget {...p} />,
   decks: (p) => <DeckDrillWidget {...p} />,
   errors: (p) => <ErrorsWidget {...p} />,
   sidebets: (p) => <SideBetsWidget {...p} />,

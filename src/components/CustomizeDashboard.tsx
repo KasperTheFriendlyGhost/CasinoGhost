@@ -159,7 +159,7 @@ export function CustomizeDashboard({ cfg, update, restoreDefaults, onResetSessio
           </section>
         </div>
         <footer className="flex justify-end border-t border-line px-5 py-3">
-          <button onClick={onClose} className="rounded-full bg-brass px-5 py-2 font-semibold text-brass-ink">Done</button>
+          <button onClick={onClose} className="rounded-full btn-brass px-5 py-2 font-semibold">Done</button>
         </footer>
       </motion.div>
     </div>
