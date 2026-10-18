@@ -2,8 +2,8 @@
 // and grading of every decision against the generated strategy + index plays.
 
 import { Shoe, valueOf, type Card } from './cards';
-import { ACT, ACT_NAMES, Advisor, handInfo, type ActionCode, type DevMode, type Rules } from './strategy';
-import { SIDE_BETS, evaluate, settleSideBet, type Paytable, type SideBetId, type SideBetResult } from './sidebets';
+import { ACT, ACT_NAMES, Advisor, handInfo, houseEdge, type ActionCode, type DevMode, type Rules } from './strategy';
+import { SIDE_BETS, evaluate, settleSideBet, sideBetSD, type Paytable, type SideBetId, type SideBetResult } from './sidebets';
 
 const HI_LO = [0, -1, 1, 1, 1, 1, 1, 0, 0, 0, -1];
 
@@ -22,6 +22,8 @@ export interface Hand {
   net?: number;
 }
 
+export type DecisionCategory = 'hard' | 'soft' | 'pair' | 'insurance';
+
 export interface Decision {
   spot: string;
   chosen: string;
@@ -30,6 +32,29 @@ export interface Decision {
   evCost: number;
   index: string | null;
   tc: number;
+  category: DecisionCategory;
+  /** The spot has a Hi-Lo index play (whether or not the count changed the play). */
+  indexSpot: boolean;
+}
+
+/** One settled round, kept for charts and session analysis. */
+export interface RoundRecord {
+  n: number;
+  /** Active session time (ms, pauses excluded) when the round settled. */
+  t: number;
+  /** Main bet at the deal. */
+  bet: number;
+  sideStake: number;
+  /** True count (floored, as the player sees it) before the deal. */
+  tc: number;
+  net: number;
+  bankroll: number;
+  /** Cumulative cost of mistakes after this round ($). */
+  errorCost: number;
+  /** Expected result of the round given the count and your play ($). */
+  ev: number;
+  /** Variance of the round's result ($²). */
+  variance: number;
 }
 
 export interface SideBetSettlement extends SideBetResult {
@@ -38,11 +63,19 @@ export interface SideBetSettlement extends SideBetResult {
   evBefore: number;
 }
 
+export interface TableLimits {
+  min: number;
+  max: number;
+}
+
 export interface GameSettings {
   rules: Rules;
   deviations: DevMode;
   pays: Record<SideBetId, Paytable>;
+  limits?: TableLimits;
 }
+
+export interface Tally { n: number; ok: number }
 
 export interface Stats {
   rounds: number;
@@ -52,7 +85,44 @@ export interface Stats {
   net: number;
   sideNet: number;
   sideStaked: number;
+  /** Total money put in action: main bets incl. doubles and splits, side bets, insurance. */
+  wagered: number;
+  hands: number;
+  wins: number;
+  losses: number;
+  pushes: number;
+  blackjacks: number;
+  busts: number;
+  surrenders: number;
+  doubles: number;
+  splits: number;
+  insurances: number;
+  sideWins: number;
+  byCategory: Record<DecisionCategory | 'index', Tally>;
 }
+
+export const emptyStats = (): Stats => ({
+  rounds: 0, decisions: 0, correct: 0, evLost: 0, net: 0, sideNet: 0, sideStaked: 0, wagered: 0,
+  hands: 0, wins: 0, losses: 0, pushes: 0, blackjacks: 0, busts: 0, surrenders: 0, doubles: 0, splits: 0, insurances: 0, sideWins: 0,
+  byCategory: { hard: { n: 0, ok: 0 }, soft: { n: 0, ok: 0 }, pair: { n: 0, ok: 0 }, insurance: { n: 0, ok: 0 }, index: { n: 0, ok: 0 } },
+});
+
+/** What is saved between visits. */
+export interface SessionSnapshot {
+  bankroll: number;
+  mainBet: number;
+  sideStakes: Record<SideBetId, number>;
+  stats: Stats;
+  log: Decision[];
+  rounds: RoundRecord[];
+  elapsed: number;
+}
+
+/** Standard deviation of one blackjack round per unit bet (multi-deck, basic strategy). */
+const MAIN_SD = 1.15;
+/** Approximate Hi-Lo edge gained per +1 true count. */
+const EDGE_PER_TC = 0.005;
+const MAX_ROUNDS = 2000;
 
 export const SIDE_IDS: SideBetId[] = ['pp', 't213', 'll'];
 
@@ -74,18 +144,58 @@ export class Game {
   justShuffled = true;
   lastDecision: Decision | null = null;
   log: Decision[] = [];
-  stats: Stats = { rounds: 0, decisions: 0, correct: 0, evLost: 0, net: 0, sideNet: 0, sideStaked: 0 };
+  stats: Stats = emptyStats();
+  rounds: RoundRecord[] = [];
+  /** Basic-strategy edge for these rules (negative = house edge). */
+  readonly baseEdge: number;
   /** Bumps on every change so React can re-render. */
   version = 0;
   private listeners = new Set<() => void>();
   private sideEVBefore: Record<SideBetId, number> = { pp: 0, t213: 0, ll: 0 };
   /** Net result of the current/last round, side bets included. */
   roundNet = 0;
+  private roundStart = { bet: 0, sideStake: 0, tc: 0, sideEV: 0, sideVar: 0 };
+  // Session clock: active time excludes pauses.
+  private clockBase = 0;
+  private clockStartedAt: number | null = Date.now();
 
   constructor(settings: GameSettings, rand: () => number = Math.random) {
     this.settings = settings;
     this.shoe = new Shoe(settings.rules.decks, settings.rules.penetration, rand);
     this.advisor = new Advisor(settings.rules, settings.deviations);
+    this.baseEdge = -houseEdge(settings.rules, this.advisor.S);
+  }
+
+  // ----- session clock and persistence ---------------------------------------------------
+
+  get paused() { return this.clockStartedAt === null; }
+  /** Active session time in ms. */
+  elapsed(now = Date.now()) { return this.clockBase + (this.clockStartedAt === null ? 0 : now - this.clockStartedAt); }
+  pause() { if (this.clockStartedAt !== null) { this.clockBase = this.elapsed(); this.clockStartedAt = null; this.emit(); } }
+  resume() { if (this.clockStartedAt === null) { this.clockStartedAt = Date.now(); this.emit(); } }
+
+  get limits(): TableLimits { return this.settings.limits ?? { min: 1, max: 100000 }; }
+
+  snapshot(): SessionSnapshot {
+    return { bankroll: this.bankroll, mainBet: this.mainBet, sideStakes: { ...this.sideStakes }, stats: this.stats, log: this.log, rounds: this.rounds, elapsed: this.elapsed() };
+  }
+
+  restore(s: Partial<SessionSnapshot>) {
+    if (typeof s.bankroll === 'number') this.bankroll = s.bankroll;
+    if (typeof s.mainBet === 'number') this.mainBet = s.mainBet;
+    if (s.sideStakes) this.sideStakes = { ...this.sideStakes, ...s.sideStakes };
+    if (s.stats) this.stats = { ...emptyStats(), ...s.stats, byCategory: { ...emptyStats().byCategory, ...s.stats.byCategory } };
+    if (Array.isArray(s.log)) this.log = s.log;
+    if (Array.isArray(s.rounds)) this.rounds = s.rounds;
+    if (typeof s.elapsed === 'number') { this.clockBase = s.elapsed; this.clockStartedAt = this.clockStartedAt === null ? null : Date.now(); }
+    this.emit();
+  }
+
+  /** Clear session statistics and history (bankroll back to the given amount). */
+  resetSession(bankroll = 1000) {
+    this.stats = emptyStats(); this.rounds = []; this.log = []; this.lastDecision = null;
+    this.bankroll = bankroll; this.clockBase = 0; this.clockStartedAt = Date.now();
+    this.emit();
   }
 
   subscribe(fn: () => void) { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; }
@@ -136,7 +246,7 @@ export class Game {
     }
     const dev = adv.dev && !adv.dev.held ? adv.dev : null;
     const index = dev ? `TC ${this.tc >= dev.idx ? '≥' : '<'} ${dev.idx > 0 ? '+' : ''}${dev.idx}` : null;
-    return { action: action as ActionCode, index, vals };
+    return { action: action as ActionCode, index, vals, kind: adv.kind as 'hard' | 'soft' | 'pair', indexSpot: !!adv.dev };
   }
 
   private advHand(h: Hand) {
@@ -145,7 +255,9 @@ export class Game {
 
   // ----- setup -----------------------------------------------------------------------------
 
-  setBet(amount: number) { if (this.phase === 'betting' || this.phase === 'settled') { this.mainBet = Math.max(0, amount); this.emit(); } }
+  setBet(amount: number) {
+    if (this.phase === 'betting' || this.phase === 'settled') { this.mainBet = Math.max(0, Math.min(this.limits.max, amount)); this.emit(); }
+  }
   setSideStake(id: SideBetId, amount: number) {
     if (this.phase === 'betting' || this.phase === 'settled') { this.sideStakes[id] = Math.max(0, amount); this.emit(); }
   }
@@ -162,10 +274,20 @@ export class Game {
   // ----- round flow ----------------------------------------------------------------------
 
   deal() {
-    if ((this.phase !== 'betting' && this.phase !== 'settled') || this.mainBet <= 0) return;
+    if ((this.phase !== 'betting' && this.phase !== 'settled') || this.mainBet <= 0 || this.mainBet < this.limits.min) return;
+    this.resume();
     this.justShuffled = false;
     if (this.shoe.needsShuffle) { this.shoe.shuffle(); this.rc = 0; this.justShuffled = true; }
     this.sideEVBefore = this.sideBetEVs();
+    let sideStake = 0, sideEV = 0, sideVar = 0;
+    for (const id of SIDE_IDS) {
+      const st = this.sideStakes[id];
+      if (!st) continue;
+      const e = evaluate(id, this.shoe.remaining, this.settings.pays[id]);
+      sideStake += st; sideEV += st * e.ev; sideVar += (st * sideBetSD(e)) ** 2;
+    }
+    this.roundStart = { bet: this.mainBet, sideStake, tc: this.tc, sideEV, sideVar };
+    this.stats.wagered += this.mainBet + sideStake;
     this.sideResults = {};
     this.insurance = null;
     this.lastDecision = null;
@@ -189,8 +311,10 @@ export class Game {
     this.record({
       spot: 'Insurance', chosen: take ? 'Take' : 'Decline', best: correctTake ? 'Take' : 'Decline',
       correct: take === correctTake, evCost: 0, index: correctTake ? `Insurance at TC ≥ ${this.advisor.insIdx}` : null, tc: this.tc,
+      category: 'insurance', indexSpot: this.advisor.insIdx !== null,
     });
     this.insurance = take ? this.mainBet / 2 : null;
+    if (take) { this.stats.insurances++; this.stats.wagered += this.mainBet / 2; }
     this.afterInsurance();
   }
 
@@ -228,7 +352,7 @@ export class Game {
       spot: this.advisor.describe(this.advHand(h), valueOf(this.up.rank)),
       chosen: ACT_NAMES[action], best: ACT_NAMES[best.action],
       correct: action === best.action, evCost: action === best.action ? 0 : cost,
-      index: best.index, tc: this.tc,
+      index: best.index, tc: this.tc, category: best.kind, indexSpot: best.indexSpot,
     });
 
     switch (action) {
@@ -239,12 +363,13 @@ export class Game {
         break;
       }
       case ACT.STAND: h.done = true; break;
-      case ACT.DOUBLE: h.bet *= 2; h.doubled = true; h.cards.push(this.draw()); h.done = true; break;
+      case ACT.DOUBLE: this.stats.wagered += h.bet; this.stats.doubles++; h.bet *= 2; h.doubled = true; h.cards.push(this.draw()); h.done = true; break;
       case ACT.SURRENDER: h.surrendered = true; h.done = true; break;
       case ACT.SPLIT: {
         const [a, b] = h.cards;
         const aces = a.rank === 1;
         const mk = (c: Card): Hand => ({ cards: [c], bet: this.mainBet, doubled: false, fromSplit: true, aceSplit: aces, done: false, surrendered: false });
+        this.stats.wagered += this.mainBet; this.stats.splits++;
         this.hands.splice(this.active, 1, mk(a), mk(b));
         break;
       }
@@ -302,6 +427,13 @@ export class Game {
       else if (t === d) { h.outcome = 'push'; h.net = 0; }
       else { h.outcome = 'lose'; h.net = -h.bet; }
       net += h.net;
+      this.stats.hands++;
+      if (h.outcome === 'blackjack') { this.stats.blackjacks++; this.stats.wins++; }
+      else if (h.outcome === 'win') this.stats.wins++;
+      else if (h.outcome === 'push') this.stats.pushes++;
+      else if (h.outcome === 'bust') { this.stats.busts++; this.stats.losses++; }
+      else if (h.outcome === 'surrender') this.stats.surrenders++;
+      else this.stats.losses++;
     }
     if (this.insurance) net += dealerBJ ? this.insurance * 2 : -this.insurance;
     this.settleSide('ll');
@@ -310,6 +442,17 @@ export class Game {
     this.stats.net += net;
     this.stats.rounds++;
     this.bankroll += this.roundNet;
+
+    // Expected result given the count at the deal, minus what this round's mistakes cost.
+    const rs = this.roundStart;
+    const mistakes = this.stats.evLost - (this.rounds.at(-1)?.errorCost ?? 0);
+    this.rounds.push({
+      n: this.stats.rounds, t: this.elapsed(), bet: rs.bet, sideStake: rs.sideStake, tc: rs.tc,
+      net: this.roundNet, bankroll: this.bankroll, errorCost: this.stats.evLost,
+      ev: rs.bet * (this.baseEdge + EDGE_PER_TC * rs.tc) + rs.sideEV - mistakes,
+      variance: (MAIN_SD * rs.bet) ** 2 + rs.sideVar,
+    });
+    if (this.rounds.length > MAX_ROUNDS) this.rounds.shift();
     this.emit();
   }
 
@@ -321,6 +464,7 @@ export class Game {
     this.roundNet += res.net * stake;
     this.stats.sideNet += res.net * stake;
     this.stats.sideStaked += stake;
+    if (res.key) this.stats.sideWins++;
   }
 
   private record(d: Decision) {
@@ -330,6 +474,9 @@ export class Game {
     this.stats.decisions++;
     if (d.correct) this.stats.correct++;
     this.stats.evLost += d.evCost * this.mainBet;
+    const tally = (t: Tally) => { t.n++; if (d.correct) t.ok++; };
+    tally(this.stats.byCategory[d.category]);
+    if (d.indexSpot) tally(this.stats.byCategory.index);
   }
 }
 

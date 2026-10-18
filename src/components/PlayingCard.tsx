@@ -1,5 +1,6 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { RANK_LABEL, SUIT_SYMBOL, SUIT_NAME, isRed, type Card } from '../engine/cards';
+import { useSpeed } from '../lib/dashboard';
 
 interface Props {
   card: Card;
@@ -12,7 +13,8 @@ interface Props {
 const FACE = new Set([11, 12, 13]);
 
 export function PlayingCard({ card, faceDown = false, delay = 0, small = false }: Props) {
-  const reduce = useReducedMotion();
+  const speed = useSpeed();
+  const reduce = useReducedMotion() || speed === 0;
   const color = isRed(card.suit) ? 'var(--card-red)' : 'var(--card-black)';
   const rank = RANK_LABEL[card.rank];
   const suit = SUIT_SYMBOL[card.suit];
@@ -24,7 +26,7 @@ export function PlayingCard({ card, faceDown = false, delay = 0, small = false }
       style={{ width: w, aspectRatio: '5 / 7', perspective: 800 }}
       initial={reduce ? false : { x: 260, y: -220, rotate: -14, opacity: 0 }}
       animate={{ x: 0, y: 0, rotate: 0, opacity: 1 }}
-      transition={{ type: 'spring', stiffness: 260, damping: 26, delay }}
+      transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 260 / speed, damping: 26 / Math.sqrt(speed), delay: delay * speed }}
       role="img"
       aria-label={faceDown ? 'Face-down card' : `${rank} of ${SUIT_NAME[card.suit]}`}
     >
@@ -33,7 +35,7 @@ export function PlayingCard({ card, faceDown = false, delay = 0, small = false }
         style={{ transformStyle: 'preserve-3d' }}
         initial={false}
         animate={{ rotateY: faceDown ? 180 : 0 }}
-        transition={{ duration: reduce ? 0 : 0.45, ease: [0.3, 0.7, 0.2, 1] }}
+        transition={{ duration: reduce ? 0 : 0.45 * speed, ease: [0.3, 0.7, 0.2, 1] }}
       >
         {/* Face */}
         <div

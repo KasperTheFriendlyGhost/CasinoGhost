@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { RULE_PRESETS, houseEdge, parseRules, rulesSummary, type DevMode, type Rules as RulesT } from '../engine/strategy';
+import type { TableLimits } from '../engine/game';
 import type { AppSettings } from '../lib/settings';
 import { cx, edgePct } from '../lib/format';
 import { Segmented } from './Lab';
@@ -8,9 +9,10 @@ interface Props {
   settings: AppSettings;
   updateRules: (p: Partial<RulesT>) => void;
   setDeviations: (d: DevMode) => void;
+  setLimits: (l: TableLimits) => void;
 }
 
-export function Rules({ settings, updateRules, setDeviations }: Props) {
+export function Rules({ settings, updateRules, setDeviations, setLimits }: Props) {
   const R = settings.rules;
   const edge = useMemo(() => houseEdge(R), [R]);
   const [text, setText] = useState('');
@@ -74,6 +76,13 @@ export function Rules({ settings, updateRules, setDeviations }: Props) {
           <Field label="Hole card"><Segmented value={R.peek ? 'peek' : 'enhc'} onChange={(v) => updateRules({ peek: v === 'peek' })} options={[{ value: 'peek', label: 'Dealer peeks' }, { value: 'enhc', label: 'No hole card' }]} /></Field>
           <Field label="Split up to"><Segmented value={String(R.maxHands)} onChange={(v) => updateRules({ maxHands: Number(v) })} options={[{ value: '2', label: '2 hands' }, { value: '3', label: '3' }, { value: '4', label: '4' }]} /></Field>
           <Field label="Split aces"><Segmented value={R.resplitAces ? 'rsa' : 'no'} onChange={(v) => updateRules({ resplitAces: v === 'rsa' })} options={[{ value: 'no', label: 'No resplit' }, { value: 'rsa', label: 'Resplit' }]} /></Field>
+          <Field label="Table limits">
+            <div className="flex items-center gap-2">
+              <input id="r-min" aria-label="Minimum bet" type="number" min={1} step={5} value={settings.limits.min} onChange={(e) => setLimits({ ...settings.limits, min: Math.max(1, Number(e.target.value) || 1) })} className="sel w-24 text-right font-data" />
+              <span className="text-fg-2">to</span>
+              <input id="r-max" aria-label="Maximum bet" type="number" min={1} step={100} value={settings.limits.max} onChange={(e) => setLimits({ ...settings.limits, max: Math.max(settings.limits.min, Number(e.target.value) || settings.limits.min) })} className="sel w-28 text-right font-data" />
+            </div>
+          </Field>
           <Field label={`Penetration · ${Math.round(R.penetration * 100)}% dealt`}>
             <input id="r-pen" type="range" min={0.5} max={0.9} step={0.01} value={R.penetration} onChange={(e) => updateRules({ penetration: Number(e.target.value) })} className="w-full" />
           </Field>

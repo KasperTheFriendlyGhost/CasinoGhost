@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Lightbulb, RotateCcw, Eye, EyeOff, Check, X } from 'lucide-react';
+import { Lightbulb, RotateCcw, Check, X, LayoutDashboard, Pause, Play as PlayIcon, Shuffle } from 'lucide-react';
 import { valueOf } from '../engine/cards';
-import { Game, SIDE_IDS, type Hand } from '../engine/game';
+import { Game, SIDE_IDS, type Hand, type SessionSnapshot } from '../engine/game';
 import { ACT, handInfo, type ActionCode } from '../engine/strategy';
 import { SIDE_BETS, type SideBetId } from '../engine/sidebets';
 import type { AppSettings } from '../lib/settings';
 import { usePref } from '../lib/settings';
-import { cx, edgePct, money, signed } from '../lib/format';
+import { SpeedContext, speedFactor, useDashboard, widgetsFor, type DashboardConfig } from '../lib/dashboard';
+import { cx, money, signed } from '../lib/format';
 import { PlayingCard } from '../components/PlayingCard';
 import { FeltPrint } from '../components/FeltPrint';
+import { DashboardColumn } from '../components/widgets';
+import { CustomizeDashboard } from '../components/CustomizeDashboard';
 
 type Spot = 'main' | SideBetId;
 
@@ -28,28 +31,47 @@ const ACTIONS: { code: ActionCode; label: string; key: string }[] = [
   { code: ACT.SURRENDER as ActionCode, label: 'Surrender', key: 'R' },
 ];
 
-function useGame(settings: AppSettings) {
+const SESSION_KEY = 'casinoghost:session';
+
+function loadSession(): Partial<SessionSnapshot> | null {
+  try { const raw = localStorage.getItem(SESSION_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+function saveSession(s: SessionSnapshot) {
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch { /* storage unavailable */ }
+}
+
+function useGame(settings: AppSettings, dash: DashboardConfig) {
   const carry = useRef<Game | null>(null);
   const key = JSON.stringify([settings.rules, settings.deviations]);
   const game = useMemo(() => {
-    const g = new Game({ rules: settings.rules, deviations: settings.deviations, pays: settings.pays });
+    const g = new Game({ rules: settings.rules, deviations: settings.deviations, pays: settings.pays, limits: settings.limits });
     const prev = carry.current;
-    if (prev) { g.bankroll = prev.bankroll; g.mainBet = prev.mainBet; g.sideStakes = { ...prev.sideStakes }; g.stats = prev.stats; g.log = prev.log; }
+    if (prev) g.restore(prev.snapshot());
+    else {
+      g.bankroll = dash.startBankroll;
+      const saved = dash.reset === 'manual' ? loadSession() : null;
+      if (saved) g.restore(saved);
+    }
     carry.current = g;
     return g;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
   game.settings.pays = settings.pays;
+  game.settings.limits = settings.limits;
   const [, force] = useReducer((x: number) => x + 1, 0);
   useEffect(() => game.subscribe(force), [game]);
+  // Save after every settled round.
+  useEffect(() => { saveSession(game.snapshot()); }, [game, game.stats.rounds]);
   return game;
 }
 
 export function Play({ settings }: { settings: AppSettings }) {
-  const game = useGame(settings);
+  const { cfg: dash, update: updateDash, reset: resetDash } = useDashboard();
+  const game = useGame(settings, dash);
   const [spot, setSpot] = useState<Spot>('main');
   const [hideCount, setHideCount] = usePref('hideCount', false);
   const [hint, setHint] = useState<string | null>(null);
+  const [customizing, setCustomizing] = useState(false);
   const R = settings.rules;
   const phase = game.phase;
   const canBet = phase === 'betting' || phase === 'settled';
@@ -67,11 +89,12 @@ export function Play({ settings }: { settings: AppSettings }) {
     const name = ACTIONS.find((x) => x.code === a.action)!.label;
     setHint(a.index ? `${name}: index play (${a.index})` : `${name} is the basic-strategy play`);
   };
+  const resetSession = useCallback(() => { game.resetSession(dash.startBankroll); saveSession(game.snapshot()); }, [game, dash.startBankroll]);
 
   // Keyboard: H S D P R act, Space/Enter deals, I/N insurance, ? hint.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (customizing || e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (game.phase === 'player') {
         const a = ACTIONS.find((x) => x.key.toLowerCase() === k);
@@ -80,7 +103,10 @@ export function Play({ settings }: { settings: AppSettings }) {
       } else if (game.phase === 'insurance') {
         if (k === 'i' || k === 'y') game.takeInsurance(true);
         if (k === 'n') game.takeInsurance(false);
-      } else if ((k === ' ' || k === 'enter') && !(e.target instanceof HTMLButtonElement)) {
+      } else if (k === ' ' || k === 'enter') {
+        // Space/Enter deals, even right after clicking a chip or betting spot; other buttons keep their usual keys.
+        const t = e.target;
+        if (t instanceof HTMLButtonElement && !t.dataset.betControl) return;
         e.preventDefault(); deal();
       }
     };
@@ -90,14 +116,35 @@ export function Play({ settings }: { settings: AppSettings }) {
 
   const d = game.lastDecision;
   const showRound = phase === 'settled';
+  const left = widgetsFor(dash, 'left'), right = widgetsFor(dash, 'right');
+  const wp = { game, cfg: dash, hideCount, setHideCount, evs, onPickSide: (id: SideBetId) => setSpot(id) };
+  const grid = left.length && right.length
+    ? 'xl:grid-cols-[300px_minmax(0,1fr)_300px]'
+    : left.length ? 'lg:grid-cols-[330px_minmax(0,1fr)]' : right.length ? 'lg:grid-cols-[minmax(0,1fr)_330px]' : '';
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
+    <SpeedContext.Provider value={speedFactor(dash.speed)}>
+    <div className={cx('grid items-start gap-4', grid)}>
       <section className="min-w-0 flex flex-col gap-3">
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center gap-2">
+          <ToolButton onClick={() => setCustomizing(true)}><LayoutDashboard size={15} aria-hidden /> Customize dashboard</ToolButton>
+          <ToolButton onClick={() => (game.paused ? game.resume() : game.pause())} pressed={game.paused}>
+            {game.paused ? <><PlayIcon size={15} aria-hidden /> Resume</> : <><Pause size={15} aria-hidden /> Pause</>}
+          </ToolButton>
+          <ToolButton onClick={() => game.newShoe()} disabled={!canBet}><Shuffle size={15} aria-hidden /> New shoe</ToolButton>
+          <div className="ml-auto flex items-center gap-1 rounded-full border border-line bg-panel p-0.5 text-xs font-semibold" role="radiogroup" aria-label="Deal speed">
+            {(['slow', 'normal', 'fast', 'instant'] as const).map((sp) => (
+              <button key={sp} role="radio" aria-checked={dash.speed === sp} onClick={() => updateDash({ speed: sp })}
+                className={cx('rounded-full px-2.5 py-1 capitalize', dash.speed === sp ? 'bg-brass text-brass-ink' : 'text-fg-2 hover:text-fg')}>{sp}</button>
+            ))}
+          </div>
+        </div>
         {/* Table */}
         <div className="rail rounded-[28px] p-[10px] sm:p-[14px]" style={{ ['--card-w' as string]: 'clamp(50px, 8.4vw, 88px)', ['--card-w-sm' as string]: 'clamp(42px, 6.4vw, 70px)' }}>
           <div className="felt felt-shape relative flex min-h-[420px] flex-col overflow-hidden rounded-[20px] sm:min-h-[500px]">
             <ShoeGauge game={game} />
+            <TableCorner game={game} showCount={dash.pinCount && !hideCount} />
             {/* Dealer */}
             <div className="flex flex-col items-center gap-2 pt-5">
               <div className="flex min-h-[calc(var(--card-w)*1.4)] items-start">
@@ -172,7 +219,7 @@ export function Play({ settings }: { settings: AppSettings }) {
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2" role="group" aria-label="Chips">
                 {CHIPS.map((c) => (
-                  <button key={c.v} onClick={() => setStake(spot, stakeOf(spot) + c.v)} className="chip grid place-items-center rounded-full font-display text-[15px] font-extrabold text-white transition-transform hover:-translate-y-0.5 active:translate-y-0" style={{ width: 46, height: 46, background: `radial-gradient(circle at 50% 50%, ${c.bg} 0 52%, transparent 53%), repeating-conic-gradient(${c.edge} 0 15deg, ${c.bg} 15deg 30deg)`, boxShadow: '0 3px 0 rgba(0,0,0,0.35), inset 0 0 0 2px rgba(0,0,0,0.25)' }} aria-label={`Add $${c.v} to ${spotName(spot)}`}>
+                  <button key={c.v} data-bet-control="1" onClick={() => setStake(spot, stakeOf(spot) + c.v)} className="chip grid place-items-center rounded-full font-display text-[15px] font-extrabold text-white transition-transform hover:-translate-y-0.5 active:translate-y-0" style={{ width: 46, height: 46, background: `radial-gradient(circle at 50% 50%, ${c.bg} 0 52%, transparent 53%), repeating-conic-gradient(${c.edge} 0 15deg, ${c.bg} 15deg 30deg)`, boxShadow: '0 3px 0 rgba(0,0,0,0.35), inset 0 0 0 2px rgba(0,0,0,0.25)' }} aria-label={`Add $${c.v} to ${spotName(spot)}`}>
                     {c.v}
                   </button>
                 ))}
@@ -181,19 +228,59 @@ export function Play({ settings }: { settings: AppSettings }) {
                 <div className="label">Betting on</div>
                 <div className="font-semibold">{spotName(spot)} · {money(stakeOf(spot))}</div>
               </div>
-              <button onClick={() => setStake(spot, 0)} className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm text-fg-2 hover:bg-panel-2"><RotateCcw size={15} aria-hidden /> Clear</button>
-              <Btn primary big className="ml-auto" disabled={game.mainBet <= 0} onClick={deal} kbd="Space">{phase === 'settled' ? 'Deal again' : 'Deal'}</Btn>
+              <button data-bet-control="1" onClick={() => setStake(spot, 0)} className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm text-fg-2 hover:bg-panel-2"><RotateCcw size={15} aria-hidden /> Clear</button>
+              {game.mainBet > 0 && game.mainBet < game.limits.min && <span className="text-sm font-semibold text-bad">Table minimum is {money(game.limits.min)}</span>}
+              <Btn primary big className="ml-auto" disabled={game.mainBet <= 0 || game.mainBet < game.limits.min} onClick={deal} kbd="Space">{phase === 'settled' ? 'Deal again' : 'Deal'}</Btn>
             </div>
           )}
         </div>
       </section>
 
-      {/* Instrument rail */}
-      <aside className="flex min-w-0 flex-col gap-4">
-        <CountPanel game={game} hidden={hideCount} setHidden={setHideCount} />
-        <SideBetPanel game={game} evs={evs} onPick={(id) => setSpot(id)} />
-        <SessionPanel game={game} />
-      </aside>
+      {left.length > 0 && (
+        <aside className={cx('flex min-w-0 flex-col gap-4', right.length ? 'xl:order-first' : 'lg:order-first')} aria-label="Left dashboard">
+          <DashboardColumn ids={left} {...wp} />
+        </aside>
+      )}
+      {right.length > 0 && (
+        <aside className="flex min-w-0 flex-col gap-4" aria-label="Right dashboard">
+          <DashboardColumn ids={right} {...wp} />
+        </aside>
+      )}
+    </div>
+    {customizing && <CustomizeDashboard cfg={dash} update={updateDash} restoreDefaults={resetDash} onResetSession={resetSession} onClose={() => setCustomizing(false)} />}
+    </SpeedContext.Provider>
+  );
+}
+
+function ToolButton({ children, onClick, pressed, disabled }: { children: React.ReactNode; onClick: () => void; pressed?: boolean; disabled?: boolean }) {
+  return (
+    <button onClick={onClick} disabled={disabled} aria-pressed={pressed}
+      className={cx('inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40',
+        pressed ? 'border-brass bg-brass-soft text-fg' : 'border-line bg-panel text-fg-2 hover:border-brass hover:text-fg')}>
+      {children}
+    </button>
+  );
+}
+
+/** Table-limits placard and the pinned running/true count, top-left of the felt. */
+function TableCorner({ game, showCount }: { game: Game; showCount: boolean }) {
+  const { min, max } = game.limits;
+  return (
+    <div className="absolute left-3 top-3 z-10 flex flex-col items-start gap-2 sm:left-4 sm:top-4">
+      <div className="rounded-md bg-[#f4efe2] px-2.5 py-1 text-center leading-none text-[#1b1a16] shadow-[0_3px_0_rgba(0,0,0,0.35)]">
+        <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#6b5a2e]">Limits</div>
+        <div className="tnum font-display text-[17px] font-extrabold">${min.toLocaleString()}–${max.toLocaleString()}</div>
+      </div>
+      {showCount && (
+        <div className="flex gap-1.5" aria-label={`Running count ${game.rc}, true count ${game.tc}`}>
+          {[['RC', game.rc], ['TC', game.tc]].map(([l, v]) => (
+            <div key={l} className="rounded-md bg-black/55 px-2 py-1 text-center leading-none ring-1 ring-black/40 backdrop-blur-sm">
+              <div className="text-[9px] font-bold tracking-[0.14em] text-[#d6ac52]">{l}</div>
+              <motion.div key={String(v)} initial={{ scale: 1.25 }} animate={{ scale: 1 }} className="tnum font-data text-[18px] font-bold text-[#f6eedb]">{signed(v as number)}</motion.div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -262,7 +349,7 @@ function ChipStack({ amount }: { amount: number }) {
 
 function BetSpot({ amount, selected, onSelect, result }: { amount: number; selected: boolean; onSelect: () => void; result: number | null }) {
   return (
-    <button onClick={onSelect} className={cx('relative grid place-items-center rounded-full border-2 transition-colors', selected ? 'border-brass bg-black/15' : 'border-[rgba(255,240,205,0.4)]')} style={{ width: 'clamp(68px, 15vw, 92px)', aspectRatio: '1' }} aria-label={`Main bet ${money(amount)}`}>
+    <button data-bet-control="1" onClick={onSelect} className={cx('relative grid place-items-center rounded-full border-2 transition-colors', selected ? 'border-brass bg-black/15' : 'border-[rgba(255,240,205,0.4)]')} style={{ width: 'clamp(68px, 15vw, 92px)', aspectRatio: '1' }} aria-label={`Main bet ${money(amount)}`}>
       {amount > 0 ? <ChipStack amount={amount} /> : <span className="font-display text-sm font-bold tracking-widest text-[var(--felt-ink)]">BET</span>}
       <span className="absolute -bottom-6 whitespace-nowrap font-data text-xs text-[#f6eedb]">{money(amount)}</span>
       {result !== null && (
@@ -279,7 +366,7 @@ function SideSpot({ id, game, selected, onSelect }: { id: SideBetId; game: Game;
   const stake = game.sideStakes[id];
   const res = game.sideResults[id];
   return (
-    <button onClick={onSelect} className={cx('relative grid place-items-center rounded-full border-2 border-dashed transition-colors', selected ? 'border-brass bg-black/15' : 'border-[rgba(255,240,205,0.35)]')} style={{ width: 'clamp(50px, 11vw, 64px)', aspectRatio: '1' }} aria-label={`${SIDE_BETS[id].name} side bet ${money(stake)}`}>
+    <button data-bet-control="1" onClick={onSelect} className={cx('relative grid place-items-center rounded-full border-2 border-dashed transition-colors', selected ? 'border-brass bg-black/15' : 'border-[rgba(255,240,205,0.35)]')} style={{ width: 'clamp(50px, 11vw, 64px)', aspectRatio: '1' }} aria-label={`${SIDE_BETS[id].name} side bet ${money(stake)}`}>
       {stake > 0 ? <div className="scale-75"><ChipStack amount={stake} /></div> : <span className="font-display text-[13px] font-bold tracking-wider text-[var(--felt-ink)]">{SIDE_BETS[id].short}</span>}
       {stake > 0 && <span className="absolute -bottom-5 font-data text-[11px] text-[#f6eedb]">{money(stake)}</span>}
       {res && (
@@ -328,132 +415,5 @@ function Btn({ children, onClick, primary, disabled, kbd, big, className }: { ch
       {children}
       {kbd && <kbd className={cx('hidden rounded px-1.5 font-data text-[10px] sm:inline', primary ? 'bg-black/15' : 'bg-black/10 text-muted')}>{kbd}</kbd>}
     </button>
-  );
-}
-
-// ----- Rail panels -------------------------------------------------------------------------
-
-function CountPanel({ game, hidden, setHidden }: { game: Game; hidden: boolean; setHidden: (v: boolean) => void }) {
-  const [guess, setGuess] = useState('');
-  const [verdict, setVerdict] = useState<null | { ok: boolean; rc: number }>(null);
-  useEffect(() => setVerdict(null), [game.stats.rounds]);
-  const check = (e: React.FormEvent) => {
-    e.preventDefault();
-    const n = Number(guess);
-    if (!Number.isFinite(n) || guess.trim() === '') return;
-    setVerdict({ ok: n === game.rc, rc: game.rc });
-    setGuess('');
-  };
-  return (
-    <div className="panel p-4" style={{ boxShadow: 'var(--shadow)' }}>
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="label">Hi-Lo count</h2>
-        <button onClick={() => setHidden(!hidden)} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-fg-2 hover:bg-panel-2">
-          {hidden ? <Eye size={14} aria-hidden /> : <EyeOff size={14} aria-hidden />} {hidden ? 'Show' : 'Practice: hide'}
-        </button>
-      </div>
-      {hidden ? (
-        <form onSubmit={check} className="flex flex-col gap-2">
-          <label htmlFor="rc-guess" className="text-sm text-fg-2">Keep the count yourself. What is the running count now?</label>
-          <div className="flex gap-2">
-            <input id="rc-guess" inputMode="numeric" value={guess} onChange={(e) => setGuess(e.target.value)} placeholder="e.g. −3" className="w-full min-w-0 rounded-lg border border-line-strong bg-panel-2 px-3 py-2 font-data text-fg" />
-            <button className="rounded-lg bg-brass px-3 font-semibold text-brass-ink">Check</button>
-          </div>
-          {verdict && (
-            <p className={cx('text-sm font-semibold', verdict.ok ? 'text-good' : 'text-bad')}>
-              {verdict.ok ? 'Correct.' : `Not quite: the running count is ${signed(verdict.rc)}.`}
-            </p>
-          )}
-        </form>
-      ) : (
-        <div className="grid grid-cols-3 gap-2">
-          <Stat label="Running" value={signed(game.rc)} big />
-          <Stat label="True" value={signed(game.tc)} big accent={game.tc >= 2} />
-          <Stat label="Decks left" value={game.decksEst.toFixed(1)} big />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Stat({ label, value, big, accent }: { label: string; value: string; big?: boolean; accent?: boolean }) {
-  return (
-    <div className="min-w-0">
-      <div className="label">{label}</div>
-      <div className={cx('tnum font-display font-bold leading-none', big ? 'mt-1 text-[34px]' : 'mt-0.5 text-xl', accent ? 'text-brass' : 'text-fg')}>{value}</div>
-    </div>
-  );
-}
-
-function SideBetPanel({ game, evs, onPick }: { game: Game; evs: Record<SideBetId, number>; onPick: (id: SideBetId) => void }) {
-  return (
-    <div className="panel p-4" style={{ boxShadow: 'var(--shadow)' }}>
-      <div className="mb-1 flex items-baseline justify-between">
-        <h2 className="label">Side bets · exact edge now</h2>
-      </div>
-      <p className="mb-3 text-xs text-muted">From every card left in the shoe. Positive means the bet favours you this round.</p>
-      <ul className="flex flex-col gap-3">
-        {SIDE_IDS.map((id) => {
-          const ev = evs[id];
-          const positive = ev > 0;
-          // Meter: −30% … +10%, zero marked.
-          const lo = -0.3, hi = 0.1, zero = (0 - lo) / (hi - lo);
-          const pos = Math.min(1, Math.max(0, (ev - lo) / (hi - lo)));
-          const res = game.sideResults[id];
-          return (
-            <li key={id}>
-              <button onClick={() => onPick(id)} className="w-full text-left">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="font-semibold">{SIDE_BETS[id].name}</span>
-                  <span className={cx('tnum font-data text-sm font-bold', positive ? 'text-good' : 'text-fg-2')}>
-                    {positive ? `+${edgePct(ev)} player` : `${edgePct(ev)} house`}
-                  </span>
-                </div>
-                <div className="relative mt-1.5 h-2 rounded-full bg-panel-2" aria-hidden>
-                  <div className="absolute top-[-3px] h-[14px] w-[2px] bg-fg-2" style={{ left: `${zero * 100}%` }} />
-                  <motion.div className="absolute top-0 h-2 rounded-full" animate={{ left: `${Math.min(pos, zero) * 100}%`, width: `${Math.abs(pos - zero) * 100}%` }}
-                    style={{ background: positive ? 'var(--good)' : 'var(--series-neg)' }} transition={{ type: 'spring', stiffness: 200, damping: 30 }} />
-                </div>
-                <div className="mt-1 flex justify-between text-xs text-muted">
-                  <span>{game.sideStakes[id] ? `Betting ${money(game.sideStakes[id])}` : 'Not betting'}</span>
-                  {res && <span className={res.key ? 'font-semibold text-brass' : ''}>{res.key ? `${res.label} · ${money(res.net * res.stake)}` : 'Last: no win'}</span>}
-                </div>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-function SessionPanel({ game }: { game: Game }) {
-  const s = game.stats;
-  const acc = s.decisions ? s.correct / s.decisions : 1;
-  return (
-    <div className="panel p-4" style={{ boxShadow: 'var(--shadow)' }}>
-      <h2 className="label mb-3">Session</h2>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-        <Stat label="Bankroll" value={money(game.bankroll)} />
-        <Stat label="Hands" value={String(s.rounds)} />
-        <Stat label="Accuracy" value={`${Math.round(acc * 100)}%`} accent={acc >= 0.98 && s.decisions >= 20} />
-        <Stat label="Cost of mistakes" value={money(-s.evLost)} />
-      </div>
-      {game.log.length > 0 && (
-        <div className="mt-4 border-t border-line pt-3">
-          <h3 className="label mb-2">Recent decisions</h3>
-          <ul className="flex max-h-48 flex-col gap-1.5 overflow-y-auto pr-1 text-[13px]">
-            {game.log.slice(0, 12).map((d, i) => (
-              <li key={game.stats.decisions - i} className="flex items-center gap-2">
-                <span className={cx('grid size-4 shrink-0 place-items-center rounded-full', d.correct ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad')}>{d.correct ? <Check size={11} /> : <X size={11} />}</span>
-                <span className="min-w-0 flex-1 truncate">{d.spot}</span>
-                <span className="shrink-0 text-muted">{d.correct ? d.chosen : `${d.chosen} → ${d.best}`}</span>
-                <span className="w-10 shrink-0 text-right font-data text-[11px] text-muted">TC {signed(d.tc)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
   );
 }

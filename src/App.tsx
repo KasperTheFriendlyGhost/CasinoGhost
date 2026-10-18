@@ -58,7 +58,7 @@ export function App() {
         {route === 'play' && <Play settings={settings} />}
         {route === 'lab' && <Lab settings={settings} setPays={(id, pays) => update({ pays: { ...settings.pays, [id]: pays } })} />}
         {route === 'strategy' && <Strategy settings={settings} />}
-        {route === 'rules' && <Rules settings={settings} updateRules={updateRules} setDeviations={(deviations) => update({ deviations })} />}
+        {route === 'rules' && <Rules settings={settings} updateRules={updateRules} setDeviations={(deviations) => update({ deviations })} setLimits={(limits) => update({ limits })} />}
       </main>
 
       <footer className="gutter mx-auto w-full max-w-[1400px] pb-6 text-xs text-muted">

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { defaultRules, type DevMode, type Rules } from '../engine/strategy';
 import { defaultPaytable, type Paytable, type SideBetId } from '../engine/sidebets';
+import type { TableLimits } from '../engine/game';
 
 export interface AppSettings {
   rules: Rules;
   deviations: DevMode;
   pays: Record<SideBetId, Paytable>;
+  limits: TableLimits;
 }
 
 const KEY = 'casinoghost:settings:v1';
@@ -15,6 +17,7 @@ export function defaultSettings(): AppSettings {
     rules: { ...defaultRules(), decks: 6, h17: true, surrender: 'late', penetration: 0.75 },
     deviations: 'i18fab4',
     pays: { pp: defaultPaytable('pp'), t213: defaultPaytable('t213'), ll: defaultPaytable('ll') },
+    limits: { min: 5, max: 1000 },
   };
 }
 
@@ -24,7 +27,7 @@ function load(): AppSettings {
     const raw = localStorage.getItem(KEY);
     if (!raw) return base;
     const s = JSON.parse(raw);
-    return { ...base, ...s, rules: { ...base.rules, ...s.rules }, pays: { ...base.pays, ...s.pays } };
+    return { ...base, ...s, rules: { ...base.rules, ...s.rules }, pays: { ...base.pays, ...s.pays }, limits: { ...base.limits, ...s.limits } };
   } catch {
     return base;
   }

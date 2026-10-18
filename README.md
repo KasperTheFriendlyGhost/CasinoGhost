@@ -7,10 +7,23 @@ index plays, and exact, countable side bets (21+3, Perfect Pairs, Lucky Ladies).
 
 | Screen | What it does |
 |---|---|
-| **Table** | Animated six-deck table. Every decision is graded against the strategy generated for your rules plus Hi-Lo index plays, with the dollar cost of each mistake. Live Hi-Lo count, a practice mode that hides the count and quizzes you, and live side-bet meters that show the exact edge of each side bet for the cards left in the shoe. |
+| **Table** | Animated six-deck table. Every decision is graded against the strategy generated for your rules plus Hi-Lo index plays, with the dollar cost of each mistake. Running and true count pinned to the felt, table-limits placard, deal speed (slow to instant), pause, new shoe, and a practice mode that hides the count and quizzes you. |
+| **Dashboard** | Widgets beside the table that you choose, place left or right, and reorder: counts, cost of errors, side-bet edges, accuracy rates (hard, soft, pairs, insurance, index plays), statistics grid, stopwatch, speedometer, heat, probability curve, and charts of bankroll, true count, bet vs. count and error cost. Session stats are kept between visits until you reset them (or reset on every launch). |
 | **Side Bet Lab** | Exact house edge for any paytable and deck count, the effect of removing each card, a best-fit balanced count derived automatically for the bet, and a 20,000-shoe simulation showing the edge at every true count, when to bet, and what it's worth against perfect card tracking. |
 | **Strategy** | Basic-strategy chart solved for the current rules, the house edge with perfect play, and the index plays in use. |
-| **Rules** | Presets, every rule as a control, and a plain-English rules box ("6 decks, dealer hits soft 17, late surrender"). |
+| **Rules** | Presets, every rule as a control, table limits, and a plain-English rules box ("6 decks, dealer hits soft 17, late surrender"). |
+
+## Run it on your desktop
+
+**Install it as an app (Windows, Mac, Linux).** Once GitHub Pages is on for this repository
+(Settings → Pages → Source: *GitHub Actions*), every push to `main` publishes the app to
+`https://kasperthefriendlyghost.github.io/CasinoGhost/`. Open that in Chrome or Edge and choose
+**Install CasinoGhost** (the install icon at the right of the address bar, or menu → *Apps* →
+*Install*). It gets its own window, a Start-menu / Dock icon, and works offline.
+
+**Or double-click one file.** `CasinoGhost.html` (published next to the app, or built with
+`npm run build:single` into `dist-single/index.html`) runs straight from disk in any modern
+browser, no install or internet needed (fonts fall back to system fonts offline).
 
 ## Run it
 
@@ -28,7 +41,12 @@ npm run build:single # one self-contained HTML file in dist-single/
 - `src/engine/sidebets.ts` — closed-form exact EV for each side bet from any shoe composition;
   settlement; effects of removal; balanced integer count derivation.
 - `src/engine/sidecountSim.ts` (+ `sim.worker.ts`) — side-count simulator run in a Web Worker.
-- `src/engine/game.ts` — table game state machine, Hi-Lo count, decision grading.
+- `src/engine/game.ts` — table game state machine, Hi-Lo count, decision grading, round history,
+  table limits, session clock, save/restore.
+- `src/engine/session.ts` — heat (bet-to-count correlation and spread), luck vs. expectation,
+  rounds per hour.
+- `src/lib/dashboard.ts`, `src/components/widgets.tsx` — dashboard configuration and widgets.
+- `public/sw.js`, `public/manifest.webmanifest` — offline cache and install metadata.
 - `src/engine/strategy.ts` — typed façade over the vendored strategy engine.
 - `src/engine/vendor/cutcard/` — exact blackjack EV engine, generated basic strategy and Hi-Lo
   deviations from [noahskahn/cutcard](https://github.com/noahskahn/cutcard) (MIT, see its `LICENSE`).
@@ -44,6 +62,8 @@ npm run build:single # one self-contained HTML file in dist-single/
 - Each side bet's settlement code, over 400,000 dealt rounds, agrees with the exact calculator.
 - 20,000 auto-played rounds of perfect strategy: every decision graded correct and the result
   within the expected range of the exact house edge; the running count always matches the cards shown.
+- Session tracking: outcome and accuracy tallies add up, table limits are enforced, a saved
+  session restores exactly; heat, luck and pace calculations against hand-worked values.
 
 The vendored engine's own tests (basic strategy and house edges against Wizard of Odds figures,
 Illustrious 18 / Fab 4) pass upstream.
@@ -52,5 +72,5 @@ Illustrious 18 / Fab 4) pass upstream.
 
 - Game variants: Free Bet Blackjack, Blackjack Switch, Spanish 21 (need engine changes).
 - More side bets (Buster Blackjack, Match the Dealer, Royal Match).
-- Other counting systems for the main game, bet-spread and risk-of-ruin tools, desktop (Tauri)
-  and mobile (Capacitor) packaging.
+- Other counting systems for the main game, bet-spread and risk-of-ruin tools, a native desktop
+  build (Tauri) and mobile (Capacitor) packaging.

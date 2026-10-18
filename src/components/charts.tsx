@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TcBin } from '../engine/sidecountSim';
 
-function useWidth<T extends HTMLElement>() {
+export function useWidth<T extends HTMLElement>() {
   const ref = useRef<T>(null);
   const [w, setW] = useState(600);
   useEffect(() => {
