@@ -89,6 +89,11 @@ struct EdgeGauge: View {
     /// Exact edge of the remaining cards, when revealed.
     let exact: Double?
     let countText: String
+    /// "TC" or "RC".
+    let prefix: String
+    /// The whole curve, once the simulation has run, and the count the player sees.
+    let profile: EdgeProfile?
+    let count: Double
     let breakEven: Double?
     let offTheTop: Double
     let bankroll: Double
@@ -103,8 +108,12 @@ struct EdgeGauge: View {
         VStack(spacing: 10) {
             dial
                 .frame(height: 210)
+            if let profile {
+                EdgeCurveStrip(profile: profile, count: count, prefix: prefix)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
             HStack(spacing: 0) {
-                stat("Break-even", breakEven.map { "TC \(Fmt.count(($0 * 2).rounded(.up) / 2))" } ?? "—")
+                stat("Break-even", breakEven.map { "\(prefix) \(Fmt.count($0))" } ?? "—")
                 Divider().frame(height: 28)
                 stat("Off the top", Fmt.pct(offTheTop))
                 Divider().frame(height: 28)
@@ -119,7 +128,7 @@ struct EdgeGauge: View {
             if let calibrating {
                 VStack(spacing: 4) {
                     ProgressView(value: calibrating).tint(Theme.brass)
-                    Text("Simulating 3 million rounds of this game to calibrate the gauge…")
+                    Text("Simulating 10 million rounds of this game to calibrate the gauge…")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }
@@ -250,12 +259,16 @@ struct EdgeGaugeCard: View {
         let s = app.settings
         let curve = model.edgeCurve
         let count = model.count
+        let prefix = s.count.balanced ? "TC" : "RC"
         Panel(title: "Your edge", systemImage: "gauge.with.dots.needle.67percent") {
             EdgeGauge(
                 edge: model.estimatedEdge,
                 band: curve.flatMap { EdgeMath.band($0, at: count) },
                 exact: s.revealExactEdge ? model.exactEdge : nil,
-                countText: s.count.balanced ? "TC \(Fmt.count(count))" : "RC \(Fmt.count(count))",
+                countText: "\(prefix) \(Fmt.count(count))",
+                prefix: prefix,
+                profile: model.edgeProfile,
+                count: count,
                 breakEven: curve.map(\.breakEven).flatMap { $0.isFinite ? $0 : nil },
                 offTheTop: model.state.baseEdge,
                 bankroll: model.state.bankroll,
@@ -273,8 +286,8 @@ struct EdgeGaugeCard: View {
         guard curve != nil else {
             return "Estimated from the house edge and the count until the simulation finishes."
         }
-        var s = "Simulated for these exact rules, penetration, count and index plays."
-        s += " The band shows where the true edge of real shoes falls at this count (10th–90th percentile)."
+        var s = "Ten million simulated rounds of these exact rules, penetration, count and index plays, smoothed into one curve."
+        s += " The band shows where the true edge of real shoes falls at each count (10th–90th percentile): the count is an estimate, and this is how far it can be off."
         if app.settings.revealExactEdge { s += " The blue marker is the exact edge of the cards actually left." }
         return s
     }

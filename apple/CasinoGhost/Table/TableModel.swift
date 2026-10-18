@@ -79,6 +79,7 @@ final class TableModel {
     private(set) var mistake: DecisionRecord?
     private(set) var exactEdge: Double?
     private(set) var edgeCurve: EdgeCurve?
+    private(set) var edgeProfile: EdgeProfile?
     private(set) var shuffleTick = 0
     /// Spot the chip buttons add to.
     var selectedSpot: BetSpot = .main
@@ -132,6 +133,7 @@ final class TableModel {
 
     func setEdgeCurve(_ curve: EdgeCurve) {
         edgeCurve = curve
+        edgeProfile = EdgeProfile(curve: curve)
         game.setEdgeCurve(curve: curve)
         refresh()
     }
@@ -500,18 +502,10 @@ final class TableModel {
 /// Edge-curve lookups shared by the gauge and the table.
 enum EdgeMath {
     static func edge(_ curve: EdgeCurve, at count: Double) -> Double {
-        let line = curve.intercept + curve.slope * count
-        let b = Int32((count + 1e-9).rounded(.down))
-        guard let row = curve.rows.first(where: { $0.count == b }), row.se.isFinite else { return line }
-        let noise = row.se * row.se
-        let prior = 0.0004 * 0.0004
-        let w = prior / (prior + noise)
-        return w * row.ev + (1 - w) * line
+        curveEdge(curve: curve, count: count)
     }
 
     static func band(_ curve: EdgeCurve, at count: Double) -> (low: Double, high: Double)? {
-        let b = Int32((count + 1e-9).rounded(.down))
-        guard let row = curve.rows.first(where: { $0.count == b }), let lo = row.low, let hi = row.high else { return nil }
-        return (lo, hi)
+        curveBand(curve: curve, count: count).map { ($0.low, $0.high) }
     }
 }

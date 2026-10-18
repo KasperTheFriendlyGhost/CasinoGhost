@@ -853,6 +853,11 @@ pub struct EdgeCurve {
     pub slope: f64,
     pub overall: f64,
     pub break_even: f64,
+    /// The fitted curve: ev = c0 + c1·x + c2·x² + c3·x³ on [fit_lo, fit_hi], x = count − shift.
+    pub coefficients: Vec<f64>,
+    pub fit_lo: f64,
+    pub fit_hi: f64,
+    pub shift: f64,
 }
 
 impl From<&EdgeModel> for EdgeCurve {
@@ -867,6 +872,10 @@ impl From<&EdgeModel> for EdgeCurve {
             slope: m.slope,
             overall: m.overall,
             break_even: m.break_even(),
+            coefficients: m.coefficients.clone(),
+            fit_lo: m.fit_lo,
+            fit_hi: m.fit_hi,
+            shift: m.shift,
         }
     }
 }
@@ -881,8 +890,30 @@ impl From<&EdgeCurve> for EdgeModel {
             intercept: c.intercept,
             slope: c.slope,
             overall: c.overall,
+            coefficients: c.coefficients.clone(),
+            fit_lo: c.fit_lo,
+            fit_hi: c.fit_hi,
+            shift: c.shift,
         }
     }
+}
+
+/// The gauge's edge at a (possibly fractional) count, from the fitted curve.
+#[uniffi::export]
+pub fn curve_edge(curve: EdgeCurve, count: f64) -> f64 {
+    EdgeModel::from(&curve).edge_at(count)
+}
+
+/// 10th and 90th percentiles of the true edge at a count, if the curve has them.
+#[uniffi::export]
+pub fn curve_band(curve: EdgeCurve, count: f64) -> Option<EdgeBand> {
+    EdgeModel::from(&curve).band_at(count).map(|(low, high)| EdgeBand { low, high })
+}
+
+#[derive(uniffi::Record, Clone, Copy, Debug, PartialEq)]
+pub struct EdgeBand {
+    pub low: f64,
+    pub high: f64,
 }
 
 /// Simulate the game and build the edge gauge's model, including the spread of the true edge
@@ -893,7 +924,8 @@ pub fn build_edge_curve(setup: SimulationSetup, spread_per_count: u32, progress:
     let sample_rounds = (cfg.rounds / 10).max(100_000);
     let p = progress.start(cfg.rounds + if spread_per_count > 0 { sample_rounds } else { 0 });
     let result = sim::simulate(&cfg, p);
-    let mut model = EdgeModel::from_sim(&result, (cfg.rounds / 2000).max(5000));
+    let exact_counts = cfg.count.balanced && cfg.tc_mode.rounding == CRounding::Exact;
+    let mut model = EdgeModel::from_sim(&result, (cfg.rounds / 2000).max(5000), exact_counts);
     if spread_per_count > 0 && !p.cancel.load(Ordering::Relaxed) {
         let rules = cfg.rules;
         let s = strategy::basic_strategy(&rules);

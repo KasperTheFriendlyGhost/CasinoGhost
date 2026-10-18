@@ -34,16 +34,25 @@ pub struct EdgeRow {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct EdgeModel {
     pub rows: Vec<EdgeRow>,
-    /// Weighted least-squares line through the reliable rows: ev = intercept + slope * count.
+    /// Weighted least-squares line through the rows: ev = intercept + slope * count.
     pub intercept: f64,
     pub slope: f64,
     /// Overall EV per round, flat betting every round.
     pub overall: f64,
+    /// The smooth curve the gauge reads: ev = c0 + c1·x + c2·x² + c3·x³ on [fit_lo, fit_hi],
+    /// continued as a straight line beyond, where x = count − shift.
+    pub coefficients: Vec<f64>,
+    pub fit_lo: f64,
+    pub fit_hi: f64,
+    /// Rows hold counts from c to c + 1 when the count isn't rounded, so the curve is read half
+    /// a count lower to stay centred.
+    pub shift: f64,
 }
 
 impl EdgeModel {
-    /// Build from a simulation. Rows with fewer than `min_rounds` are dropped.
-    pub fn from_sim(sim: &SimResult, min_rounds: u64) -> EdgeModel {
+    /// Build from a simulation. Rows with fewer than `min_rounds` are dropped. `exact_counts` is
+    /// true when the player's count is not rounded to whole numbers.
+    pub fn from_sim(sim: &SimResult, min_rounds: u64, exact_counts: bool) -> EdgeModel {
         let total = sim.totals.rounds.max(1);
         let rows: Vec<EdgeRow> = sim
             .rows
@@ -58,54 +67,150 @@ impl EdgeModel {
                 ..Default::default()
             })
             .collect();
-        // weighted regression (weights 1/se^2) over rows with useful precision
-        let (mut sw, mut sx, mut sy, mut sxx, mut sxy) = (0.0, 0.0, 0.0, 0.0, 0.0);
-        for r in rows.iter().filter(|r| r.se.is_finite() && r.se > 0.0 && r.count.abs() <= 10) {
-            let w = 1.0 / (r.se * r.se);
-            let x = r.count as f64;
-            sw += w;
-            sx += w * x;
-            sy += w * r.ev;
-            sxx += w * x * x;
-            sxy += w * x * r.ev;
-        }
-        let den = sw * sxx - sx * sx;
-        let (slope, intercept) = if den.abs() > 1e-12 {
-            let s = (sw * sxy - sx * sy) / den;
-            (s, (sy - s * sx) / sw)
-        } else {
-            (0.005, sim.ev())
+        let pts: Vec<(f64, f64, f64)> = rows
+            .iter()
+            .filter(|r| r.se.is_finite() && r.se > 0.0)
+            .map(|r| (r.count as f64, r.ev, 1.0 / (r.se * r.se)))
+            .collect();
+        let (intercept, slope) = match weighted_poly(&pts, 1) {
+            Some(c) => (c[0], c[1]),
+            None => (sim.ev(), 0.005),
         };
-        EdgeModel { rows, intercept, slope, overall: sim.ev() }
+        let (fit_lo, fit_hi) = match (pts.first(), pts.last()) {
+            (Some(a), Some(b)) => (a.0, b.0),
+            _ => (0.0, 0.0),
+        };
+        // the highest degree (up to cubic) whose curve never falls as the count rises: noise at
+        // the thin ends can bend a cubic the wrong way
+        let coefficients = (1..=3)
+            .rev()
+            .filter_map(|d| weighted_poly(&pts, d))
+            .find(|c| rising(c, fit_lo, fit_hi))
+            .unwrap_or_else(|| vec![intercept, slope]);
+        EdgeModel { rows, intercept, slope, overall: sim.ev(), coefficients, fit_lo, fit_hi, shift: if exact_counts { 0.5 } else { 0.0 } }
     }
 
-    /// Expected edge at a (possibly fractional) count: the simulated value where it is precise,
-    /// blended toward the fitted line where the simulation is thin.
+    /// Expected edge at a (possibly fractional) count, from the fitted curve.
     pub fn edge_at(&self, count: f64) -> f64 {
-        let line = self.intercept + self.slope * count;
-        let b = (count + 1e-9).floor() as i32;
-        match self.rows.iter().find(|r| r.count == b) {
-            Some(r) if r.se.is_finite() => {
-                // shrink toward the line by the row's noise
-                let noise = r.se * r.se;
-                let prior = 0.0004f64.powi(2);
-                let w = prior / (prior + noise);
-                w * r.ev + (1.0 - w) * line
-            }
-            _ => line,
+        if self.coefficients.is_empty() {
+            return self.intercept + self.slope * count;
+        }
+        let x = count - self.shift;
+        let c = &self.coefficients;
+        if x < self.fit_lo {
+            poly(c, self.fit_lo) + poly_slope(c, self.fit_lo).max(0.0) * (x - self.fit_lo)
+        } else if x > self.fit_hi {
+            poly(c, self.fit_hi) + poly_slope(c, self.fit_hi).max(0.0) * (x - self.fit_hi)
+        } else {
+            poly(c, x)
         }
     }
 
-    /// Range of the true edge at a count (10th–90th percentile), if sampled.
+    /// Range of the true edge at a count (10th–90th percentile), placed around the curve.
+    /// How far each side sits from the sampled shoes' mean is interpolated between counts and
+    /// held level beyond them. It is not smoothed: the band really is narrow near a count of
+    /// zero, where most shoes are barely dealt.
     pub fn band_at(&self, count: f64) -> Option<(f64, f64)> {
-        let b = (count + 1e-9).floor() as i32;
-        self.rows.iter().find(|r| r.count == b).and_then(|r| Some((r.low?, r.high?)))
+        let rows: Vec<(f64, f64, f64)> = self
+            .rows
+            .iter()
+            .filter_map(|r| {
+                let m = r.exact_mean?;
+                Some((r.count as f64, r.low? - m, r.high? - m))
+            })
+            .collect();
+        let (first, last) = (rows.first()?, rows.last()?);
+        let x = count - self.shift;
+        let (dl, dh) = if x <= first.0 {
+            (first.1, first.2)
+        } else if x >= last.0 {
+            (last.1, last.2)
+        } else {
+            let i = rows.iter().position(|r| r.0 > x)?;
+            let (a, b) = (rows[i - 1], rows[i]);
+            let t = (x - a.0) / (b.0 - a.0);
+            (a.1 + t * (b.1 - a.1), a.2 + t * (b.2 - a.2))
+        };
+        let e = self.edge_at(count);
+        Some((e + dl.min(0.0), e + dh.max(0.0)))
     }
 
-    /// Count at which the edge turns positive (from the fitted line).
+    /// Count at which the edge turns positive, from the fitted curve.
     pub fn break_even(&self) -> f64 {
-        if self.slope > 0.0 { -self.intercept / self.slope } else { f64::INFINITY }
+        let f = |x: f64| self.edge_at(x);
+        let (mut lo, mut hi) = (-60.0, 60.0);
+        if f(lo) > 0.0 || f(hi) < 0.0 {
+            return if f(lo) > 0.0 { f64::NEG_INFINITY } else { f64::INFINITY };
+        }
+        for _ in 0..80 {
+            let mid = 0.5 * (lo + hi);
+            if f(mid) < 0.0 { lo = mid } else { hi = mid }
+        }
+        0.5 * (lo + hi)
     }
+}
+
+fn poly(c: &[f64], x: f64) -> f64 {
+    c.iter().rev().fold(0.0, |acc, k| acc * x + k)
+}
+
+fn poly_slope(c: &[f64], x: f64) -> f64 {
+    c.iter().enumerate().skip(1).rev().fold(0.0, |acc, (i, k)| acc * x + i as f64 * k)
+}
+
+fn rising(c: &[f64], lo: f64, hi: f64) -> bool {
+    (0..=40).all(|i| poly_slope(c, lo + (hi - lo) * i as f64 / 40.0) >= 0.0)
+}
+
+/// Weighted least-squares polynomial of `degree` through `(x, y, weight)` points, as raw
+/// coefficients c0..c_degree. Solved in centred, scaled x for conditioning.
+fn weighted_poly(pts: &[(f64, f64, f64)], degree: usize) -> Option<Vec<f64>> {
+    let n = degree + 1;
+    if pts.len() < n + 1 {
+        return None;
+    }
+    let sw: f64 = pts.iter().map(|p| p.2).sum();
+    let m = pts.iter().map(|p| p.0 * p.2).sum::<f64>() / sw;
+    let s = pts.iter().map(|p| (p.0 - m).abs()).fold(0.0, f64::max).max(1.0);
+    // normal equations A d = b in t = (x - m) / s
+    let mut a = vec![vec![0.0; n + 1]; n];
+    for &(x, y, w) in pts {
+        let t = (x - m) / s;
+        let pw: Vec<f64> = (0..2 * n).map(|k| t.powi(k as i32)).collect();
+        for i in 0..n {
+            for j in 0..n {
+                a[i][j] += w * pw[i + j];
+            }
+            a[i][n] += w * pw[i] * y;
+        }
+    }
+    // Gaussian elimination with partial pivoting
+    for col in 0..n {
+        let piv = (col..n).max_by(|&i, &j| a[i][col].abs().total_cmp(&a[j][col].abs()))?;
+        if a[piv][col].abs() < 1e-14 {
+            return None;
+        }
+        a.swap(col, piv);
+        for row in 0..n {
+            if row != col {
+                let f = a[row][col] / a[col][col];
+                for k in col..=n {
+                    a[row][k] -= f * a[col][k];
+                }
+            }
+        }
+    }
+    let d: Vec<f64> = (0..n).map(|i| a[i][n] / a[i][i]).collect();
+    // expand sum d_k ((x - m) / s)^k into powers of x
+    let mut c = vec![0.0; n];
+    for (k, dk) in d.iter().enumerate() {
+        let mut binom = 1.0;
+        for j in 0..=k {
+            c[j] += dk * binom * (-m).powi((k - j) as i32) / s.powi(k as i32);
+            binom = binom * (k - j) as f64 / (j + 1) as f64;
+        }
+    }
+    Some(c)
 }
 
 /// The player's choice for a starting hand at `count`: basic strategy plus index plays.
@@ -201,7 +306,7 @@ mod tests {
             seed: 3,
         };
         let sim = simulate(&cfg, &Progress::default());
-        let mut m = EdgeModel::from_sim(&sim, 20_000);
+        let mut m = EdgeModel::from_sim(&sim, 20_000, false);
         assert!(m.slope > 0.004 && m.slope < 0.007, "slope {}", m.slope);
         // counts are floored, so "0" means a true count from 0 to 1: the edge turns positive
         // around there
@@ -218,5 +323,46 @@ mod tests {
         }
         // higher counts sit higher on the gauge
         assert!(m.edge_at(3.0) > m.edge_at(0.0) && m.edge_at(0.0) > m.edge_at(-3.0));
+        // the smooth curve stays within sampling error of every well-measured count
+        for r in m.rows.iter().filter(|r| (-5..=5).contains(&r.count)) {
+            let z = (m.edge_at(r.count as f64) - r.ev) / r.se;
+            assert!(z.abs() < 3.5, "count {}: curve {} vs sim {} ± {}", r.count, m.edge_at(r.count as f64), r.ev, r.se);
+        }
+        // the band surrounds the curve and moves smoothly between counts
+        for c in [-2.0, 0.0, 1.5, 4.0] {
+            let (lo, hi) = m.band_at(c).unwrap();
+            assert!(lo < m.edge_at(c) && m.edge_at(c) < hi && hi - lo < 0.04, "count {c}: {lo} {hi}");
+            let (lo2, hi2) = m.band_at(c + 0.01).unwrap();
+            assert!((lo2 - lo).abs() < 2e-4 && (hi2 - hi).abs() < 2e-4);
+        }
+    }
+
+    #[test]
+    fn weighted_fit_recovers_a_cubic() {
+        let truth = [-0.004, 0.005, 0.0002, 0.00003];
+        let pts: Vec<(f64, f64, f64)> = (-8..=9).map(|x| (x as f64, poly(&truth, x as f64), 1.0 + (x * x) as f64)).collect();
+        let c = weighted_poly(&pts, 3).unwrap();
+        for (a, b) in c.iter().zip(truth) {
+            assert!((a - b).abs() < 1e-12, "{c:?}");
+        }
+        let line = weighted_poly(&pts[..5], 1).unwrap();
+        assert_eq!(line.len(), 2);
+        assert!((poly_slope(&truth, 2.0) - (0.005 + 0.0008 + 0.00036)).abs() < 1e-15);
+    }
+
+    #[test]
+    fn curve_is_continuous_and_extrapolates_in_a_line() {
+        let m = EdgeModel { coefficients: vec![-0.004, 0.005, 0.0002, 0.00003], fit_lo: -6.0, fit_hi: 8.0, ..Default::default() };
+        for edge in [-6.0, 8.0] {
+            assert!((m.edge_at(edge - 1e-9) - m.edge_at(edge + 1e-9)).abs() < 1e-9);
+        }
+        let s = m.edge_at(12.0) - m.edge_at(11.0);
+        assert!((m.edge_at(13.0) - m.edge_at(12.0) - s).abs() < 1e-12);
+        let be = m.break_even();
+        assert!(m.edge_at(be).abs() < 1e-12 && be > 0.7 && be < 0.8, "{be}");
+        // a half-count shift for unrounded counts
+        let shifted = EdgeModel { shift: 0.5, ..m.clone() };
+        assert!((shifted.edge_at(2.5) - m.edge_at(2.0)).abs() < 1e-15);
+        assert!((shifted.break_even() - be - 0.5).abs() < 1e-9);
     }
 }

@@ -60,4 +60,20 @@ final class EngineBridgeTests: XCTestCase {
                                 setup: RiskSetup(bankroll: 10_000, roundsPerHour: 100, tripHours: 10))
         XCTAssertGreaterThan(risk.sdRound, 0)
     }
+
+    func testEdgeCurve() {
+        let hilo = countingSystems()[0]
+        let setup = SimulationSetup(
+            rules: defaultRules(), table: defaultTable(), count: hilo, trueCount: defaultTrueCountRule(),
+            plays: publishedIndices(rules: defaultRules(), set: .i18Fab4), insuranceIndex: hiloInsuranceIndex(),
+            rounds: 1_000_000, seed: 2)
+        let curve = buildEdgeCurve(setup: setup, spreadPerCount: 8, progress: ProgressHandle())
+        XCTAssertEqual(curve.coefficients.count, 4)
+        XCTAssertLessThan(curveEdge(curve: curve, count: -2), curveEdge(curve: curve, count: 0))
+        XCTAssertLessThan(curveEdge(curve: curve, count: 0), curveEdge(curve: curve, count: 3))
+        XCTAssertEqual(curveEdge(curve: curve, count: curve.breakEven), 0, accuracy: 1e-9)
+        let band = curveBand(curve: curve, count: 2)
+        XCTAssertNotNil(band)
+        if let band { XCTAssertLessThan(band.low, band.high) }
+    }
 }

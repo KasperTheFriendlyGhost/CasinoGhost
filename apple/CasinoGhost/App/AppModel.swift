@@ -120,7 +120,7 @@ final class AnalysisStore {
 
     /// Edge curve for the current game: from the cache, or simulated in the background.
     func refreshEdgeCurve(_ s: AppSettings, plays: [IndexEntry], insurance: Double?, apply: @escaping (EdgeCurve) -> Void) {
-        let setup = Self.setup(s, plays: plays, insurance: insurance, rounds: 3_000_000)
+        let setup = Self.setup(s, plays: plays, insurance: insurance, rounds: 10_000_000)
         let key = Storage.key(setup)
         guard key != edgeKey else { return }
         edgeKey = key
@@ -138,7 +138,7 @@ final class AnalysisStore {
             let curve = await Jobs.run(handle, report: { [weak self] p in
                 if self?.edgeJob === handle { self?.edgeProgress = p }
             }) {
-                buildEdgeCurve(setup: setup, spreadPerCount: 24, progress: handle)
+                buildEdgeCurve(setup: setup, spreadPerCount: 48, progress: handle)
             }
             guard self.edgeJob === handle, !handle.isCancelled() else { return }
             self.edgeCurve = curve
@@ -175,7 +175,7 @@ final class AnalysisStore {
             let report = await Jobs.run(handle, report: { [weak self] p in
                 if self?.indexJob === handle { self?.indexProgress = p }
             }) {
-                generateIndices(setup: setup, perCount: 90, progress: handle)
+                CasinoGhostCore.generateIndices(setup: setup, perCount: 90, progress: handle)
             }
             guard self.indexJob === handle, !handle.isCancelled() else { return }
             self.indexKey = key
