@@ -28,18 +28,20 @@ struct EdgeProfile: Equatable {
         let common = curve.rows.filter { $0.freq >= 0.002 }
         guard let first = common.first, let last = common.last, last.count > first.count else { return nil }
         // rows hold whole counts, or counts from c to c + 1 when the count isn't rounded
-        xMin = Double(first.count) + curve.shift - 0.5
-        xMax = Double(last.count) + curve.shift + 0.5
+        let lo = Double(first.count) + curve.shift - 0.5
+        let hi = Double(last.count) + curve.shift + 0.5
         let steps = 96
-        let (lo, hi) = (xMin, xMax)
-        points = (0...steps).map { i in
+        let pts: [Point] = (0...steps).map { i in
             let x = lo + (hi - lo) * Double(i) / Double(steps)
             let band = curveBand(curve: curve, count: x)
             return Point(count: x, edge: curveEdge(curve: curve, count: x), low: band?.low, high: band?.high)
         }
+        xMin = lo
+        xMax = hi
+        points = pts
         bars = common.map { Bar(count: Double($0.count) + curve.shift, freq: $0.freq) }
-        let lows = points.map { $0.low ?? $0.edge }
-        let highs = points.map { $0.high ?? $0.edge }
+        let lows = pts.map { $0.low ?? $0.edge }
+        let highs = pts.map { $0.high ?? $0.edge }
         let a = Swift.min(0, lows.min() ?? 0)
         let b = Swift.max(0.005, highs.max() ?? 0)
         let pad = (b - a) * 0.08

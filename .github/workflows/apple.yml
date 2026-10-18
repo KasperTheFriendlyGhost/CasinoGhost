@@ -111,7 +111,8 @@ jobs:
             KIND=$([ "$DEV" = "$PHONE" ] && echo phone || echo pad)
             for SCREEN in table dashboard lab strategy rules settings; do
               xcrun simctl launch --terminate-running-process "$DEV" com.casinoghost.app -screenshot "$SCREEN"
-              sleep 9
+              # the dashboard waits for the edge gauge to calibrate (cached after the first run)
+              sleep $([ "$SCREEN" = dashboard ] && echo 30 || echo 9)
               xcrun simctl io "$DEV" screenshot "shots/$KIND-$SCREEN.png"
             done
             xcrun simctl shutdown "$DEV" || true

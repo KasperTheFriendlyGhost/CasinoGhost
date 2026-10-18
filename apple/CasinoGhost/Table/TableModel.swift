@@ -506,6 +506,6 @@ enum EdgeMath {
     }
 
     static func band(_ curve: EdgeCurve, at count: Double) -> (low: Double, high: Double)? {
-        curveBand(curve: curve, count: count).map { ($0.low, $0.high) }
+        curveBand(curve: curve, count: count).map { (low: $0.low, high: $0.high) }
     }
 }
