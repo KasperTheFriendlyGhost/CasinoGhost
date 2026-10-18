@@ -1,0 +1,192 @@
+@import "tailwindcss";
+
+/* Layout concept: the felt table is the app. A slim brass-trimmed top bar, the table as the
+   stage, and an instrument rail (count, side-bet meters, session) beside it — stacked on phones.
+   Dark-first: a card room at night. Light theme keeps the felt and swaps the room around it. */
+:root {
+  color-scheme: dark;
+  --bg: #121513;
+  --panel: #1a1e1c;
+  --panel-2: #232825;
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --fg: #eeeae0;
+  --fg-2: #bdb9ad;
+  --muted: #8a877d;
+  --felt: #0f5a45;
+  --felt-2: #093d2f;
+  --felt-ink: rgba(255, 240, 205, 0.5);
+  --brass: #d6ac52;
+  --brass-soft: rgba(214, 172, 82, 0.16);
+  --brass-ink: #1d1505;
+  --good: #3cc46a;
+  --good-soft: rgba(60, 196, 106, 0.14);
+  --bad: #f07a7a;
+  --bad-soft: rgba(240, 122, 122, 0.14);
+  --warn: #fab219;
+  --series-pos: #3987e5;
+  --series-neg: #e66767;
+  --grid: #2c302d;
+  --axis: #3b403c;
+  --card-face: #fbfaf5;
+  --card-edge: rgba(0, 0, 0, 0.18);
+  --card-red: #c4222b;
+  --card-black: #17191b;
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 10px 30px rgba(0, 0, 0, 0.35);
+
+  --font-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
+  --font-body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #e9e7df;
+    --panel: #f8f7f2;
+    --panel-2: #efede6;
+    --line: rgba(25, 25, 10, 0.1);
+    --line-strong: rgba(25, 25, 10, 0.18);
+    --fg: #191b19;
+    --fg-2: #4a4c47;
+    --muted: #74746c;
+    --felt: #12664e;
+    --felt-2: #0b4a39;
+    --brass: #9c7320;
+    --brass-soft: rgba(156, 115, 32, 0.14);
+    --brass-ink: #fffaf0;
+    --good: #12822f;
+    --good-soft: rgba(18, 130, 47, 0.12);
+    --bad: #c23030;
+    --bad-soft: rgba(194, 48, 48, 0.1);
+    --warn: #a86a00;
+    --series-pos: #2a78d6;
+    --series-neg: #e34948;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(40, 35, 20, 0.08);
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #e9e7df;
+  --panel: #f8f7f2;
+  --panel-2: #efede6;
+  --line: rgba(25, 25, 10, 0.1);
+  --line-strong: rgba(25, 25, 10, 0.18);
+  --fg: #191b19;
+  --fg-2: #4a4c47;
+  --muted: #74746c;
+  --felt: #12664e;
+  --felt-2: #0b4a39;
+  --brass: #9c7320;
+  --brass-soft: rgba(156, 115, 32, 0.14);
+  --brass-ink: #fffaf0;
+  --good: #12822f;
+  --good-soft: rgba(18, 130, 47, 0.12);
+  --bad: #c23030;
+  --bad-soft: rgba(194, 48, 48, 0.1);
+  --warn: #a86a00;
+  --series-pos: #2a78d6;
+  --series-neg: #e34948;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(40, 35, 20, 0.08);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-muted: var(--muted);
+  --color-felt: var(--felt);
+  --color-felt-2: var(--felt-2);
+  --color-brass: var(--brass);
+  --color-brass-soft: var(--brass-soft);
+  --color-brass-ink: var(--brass-ink);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-warn: var(--warn);
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-data: var(--font-data);
+}
+
+html, body, #root { min-height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  height: env(safe-area-inset-top, 0px);
+  z-index: 40;
+  background: var(--panel);
+}
+h1, h2, h3 { text-wrap: balance; }
+.tnum { font-variant-numeric: tabular-nums; }
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.gutter {
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+/* The felt: baize colour, a soft spotlight, and a faint woven texture. */
+.felt {
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(255, 255, 255, 0.10), transparent 60%),
+    radial-gradient(140% 120% at 50% 110%, rgba(0, 0, 0, 0.35), transparent 60%),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.018) 0 2px, transparent 2px 4px),
+    var(--felt);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35), inset 0 2px 30px rgba(0, 0, 0, 0.35);
+}
+.felt-shape { border-bottom-left-radius: 46% 26%; border-bottom-right-radius: 46% 26%; }
+@media (max-width: 640px) {
+  .felt-shape { border-bottom-left-radius: 50% 10%; border-bottom-right-radius: 50% 10%; }
+}
+.rail {
+  background: linear-gradient(180deg, #4a2f1c, #2d1b0f);
+  box-shadow: inset 0 1px 0 rgba(255, 220, 170, 0.25), 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+input[type="range"] { accent-color: var(--brass); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+.sel {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-2);
+  color: var(--fg);
+  padding: 7px 10px;
+}
