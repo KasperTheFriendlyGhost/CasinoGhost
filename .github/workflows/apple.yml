@@ -1,0 +1,128 @@
+# Native app: Rust engine tests on Linux; on a GitHub-hosted Mac, the engine is built for
+# iOS, the Swift package and app are built and tested, and simulator screenshots are pushed to
+# the `ci-screenshots` branch. Compile errors appear as annotations on the run.
+name: Apple
+
+on:
+  push:
+    branches: [main, native]
+    paths:
+      - 'engine/**'
+      - 'apple/**'
+      - 'scripts/build-core-apple.sh'
+      - 'scripts/ci-annotate.py'
+      - '.github/workflows/apple.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: apple-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine:
+    name: Engine tests (Rust)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            engine/target
+          key: cargo-linux-${{ hashFiles('engine/Cargo.lock') }}-${{ hashFiles('engine/**/*.rs') }}
+          restore-keys: cargo-linux-${{ hashFiles('engine/Cargo.lock') }}-
+      - name: Test
+        working-directory: engine
+        run: cargo test --release --locked -p casinoghost-core 2>&1 | tee ../engine-test.log
+      - name: Report errors
+        if: failure()
+        run: python3 scripts/ci-annotate.py engine-test.log
+
+  app:
+    name: iOS app
+    runs-on: macos-26
+    timeout-minutes: 75
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            engine/target
+          key: cargo-apple-${{ hashFiles('engine/Cargo.lock') }}-${{ hashFiles('engine/**/*.rs') }}
+          restore-keys: cargo-apple-${{ hashFiles('engine/Cargo.lock') }}-
+      - name: Toolchains
+        run: |
+          xcodebuild -version
+          rustup --version && rustc --version
+      - name: Build the engine for Apple platforms
+        run: set -o pipefail; scripts/build-core-apple.sh --force 2>&1 | tee core.log
+      - name: Swift package tests (macOS)
+        working-directory: apple/CasinoGhostCore
+        run: set -o pipefail; swift test 2>&1 | tee ../../package.log
+      - name: Pick simulators
+        run: |
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json, subprocess
+          d = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"]))
+          devs = [x for rt, xs in d["devices"].items() if "iOS" in rt for x in xs]
+          def pick(prefs):
+              for p in prefs:
+                  for x in devs:
+                      if x["name"].startswith(p):
+                          return x
+          phone = pick(["iPhone 17 Pro Max", "iPhone 16 Pro Max", "iPhone 17 Pro", "iPhone 16 Pro", "iPhone"])
+          pad = pick(["iPad Pro 13-inch", "iPad Pro (12.9-inch)", "iPad Air 13-inch", "iPad"])
+          print(f"PHONE={phone['udid']}")
+          print(f"PHONE_NAME={phone['name']}")
+          print(f"PAD={pad['udid'] if pad else ''}")
+          PY
+          cat "$GITHUB_ENV"
+      - name: Build and test the app
+        run: |
+          set +e
+          xcodebuild -project apple/CasinoGhost.xcodeproj -scheme CasinoGhost \
+            -destination "id=$PHONE" -derivedDataPath build/dd \
+            CODE_SIGNING_ALLOWED=NO test > app.log 2>&1
+          status=$?
+          grep -E "error:|Test Case .* failed|Executed|\*\* " app.log | tail -200
+          exit $status
+      - name: Report errors
+        if: failure()
+        run: python3 scripts/ci-annotate.py core.log package.log app.log
+      - name: Screenshots
+        if: success()
+        run: |
+          set -x
+          APP="build/dd/Build/Products/Debug-iphonesimulator/CasinoGhost.app"
+          mkdir -p shots
+          for DEV in "$PHONE" "$PAD"; do
+            [ -z "$DEV" ] && continue
+            xcrun simctl boot "$DEV" || true
+            xcrun simctl bootstatus "$DEV" -b
+            xcrun simctl ui "$DEV" appearance dark
+            xcrun simctl status_bar "$DEV" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 || true
+            xcrun simctl install "$DEV" "$APP"
+            KIND=$([ "$DEV" = "$PHONE" ] && echo phone || echo pad)
+            for SCREEN in table dashboard lab strategy rules settings; do
+              xcrun simctl launch --terminate-running-process "$DEV" com.casinoghost.app -screenshot "$SCREEN"
+              sleep 9
+              xcrun simctl io "$DEV" screenshot "shots/$KIND-$SCREEN.png"
+            done
+            xcrun simctl shutdown "$DEV" || true
+          done
+          ls -la shots
+      - name: Publish screenshots to the ci-screenshots branch
+        if: success()
+        run: |
+          cd shots
+          git init -q
+          git checkout -q -b ci-screenshots
+          git add .
+          git -c user.name="ci" -c user.email="ci@users.noreply.github.com" commit -qm "Screenshots for ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-screenshots

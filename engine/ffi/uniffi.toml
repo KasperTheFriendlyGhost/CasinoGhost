@@ -1,0 +1,6 @@
+[bindings.swift]
+module_name = "CasinoGhostCore"
+ffi_module_name = "CasinoGhostCoreFFI"
+ffi_module_filename = "CasinoGhostCoreFFI"
+generate_codable_conformance = true
+generate_case_iterable_conformance = true

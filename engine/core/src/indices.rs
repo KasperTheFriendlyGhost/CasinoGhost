@@ -130,8 +130,8 @@ pub fn generate(cfg: &SimConfig, per_bucket: usize, min_samples: usize, progress
         samples.comps.iter().map(|(b, c)| (samples.freq(*b) / kept[b] as f64, *c)).collect();
     let strategy = basic_strategy(&rules);
     let all_cells = cells();
-
-    progress.done.store(0, Ordering::Relaxed);
+    // progress: the sampling run counts rounds; each cell then adds an equal share of as many again
+    let per_cell = (cfg.rounds / all_cells.len() as u64).max(1);
     let accs: Vec<BTreeMap<i32, Acc>> = all_cells
         .par_iter()
         .map(|&(kind, key, up)| {
@@ -175,7 +175,7 @@ pub fn generate(cfg: &SimConfig, per_bucket: usize, min_samples: usize, progress
                     }
                 }
             }
-            progress.done.fetch_add(1, Ordering::Relaxed);
+            progress.done.fetch_add(per_cell, Ordering::Relaxed);
             m
         })
         .collect();

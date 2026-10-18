@@ -581,11 +581,20 @@ impl Table<'_> {
     }
 }
 
-/// Progress reporting and cancellation shared with the caller.
+/// Progress reporting and cancellation shared with the caller. Jobs add to `done`; the caller
+/// sets `total` to what the job will count (rounds, or 2x rounds for index generation).
 #[derive(Default)]
 pub struct Progress {
     pub done: AtomicU64,
+    pub total: AtomicU64,
     pub cancel: AtomicBool,
+}
+
+impl Progress {
+    pub fn fraction(&self) -> f64 {
+        let t = self.total.load(Ordering::Relaxed);
+        if t == 0 { 0.0 } else { (self.done.load(Ordering::Relaxed) as f64 / t as f64).min(1.0) }
+    }
 }
 
 fn run_chunk(cfg: &SimConfig, me: &FastStrategy, others: &FastStrategy, rounds: u64, stream: u64, progress: &Progress, sample_k: usize) -> (SimResult, Option<Sampler>) {

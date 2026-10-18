@@ -1,0 +1,16 @@
+[package]
+name = "casinoghost-ffi"
+description = "Swift bindings for the CasinoGhost engine (UniFFI)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "casinoghost_ffi"
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[dependencies]
+casinoghost-core = { path = "../core" }
+serde_json = "1"
+uniffi = "0.32"

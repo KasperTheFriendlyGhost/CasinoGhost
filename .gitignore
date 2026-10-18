@@ -3,3 +3,11 @@ dist
 dist-single
 *.log
 engine/target
+apple/CasinoGhostCore/CasinoGhostCoreFFI.xcframework
+apple/CasinoGhostCore/Sources/CasinoGhostCore/CasinoGhostCore.swift
+apple/CasinoGhostCore/.core-stamp
+apple/CasinoGhostCore/.build
+apple/build
+xcuserdata
+*.xcuserstate
+DerivedData
