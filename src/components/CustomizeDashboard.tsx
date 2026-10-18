@@ -112,6 +112,20 @@ export function CustomizeDashboard({ cfg, update, restoreDefaults, onResetSessio
             </label>
             <label className="flex items-center justify-between gap-3">
               <span>
+                <span className="block font-semibold">Show exact decks left</span>
+                <span className="block text-xs text-muted">Turn off to estimate from the discard tray</span>
+              </span>
+              <input id="deck-numbers" type="checkbox" checked={cfg.deckNumbers} onChange={(e) => update({ deckNumbers: e.target.checked })} className="size-5 accent-[var(--brass)]" />
+            </label>
+            <label className="flex items-center justify-between gap-3">
+              <span>
+                <span className="block font-semibold">Deck marks on the tray</span>
+                <span className="block text-xs text-muted">A tick for each deck on the side of the discard tray</span>
+              </span>
+              <input id="tray-marks" type="checkbox" checked={cfg.trayMarks} onChange={(e) => update({ trayMarks: e.target.checked })} className="size-5 accent-[var(--brass)]" />
+            </label>
+            <label className="flex items-center justify-between gap-3">
+              <span>
                 <span className="block font-semibold">Rounds in charts</span>
                 <span className="block text-xs text-muted">How far back the charts and heat look</span>
               </span>

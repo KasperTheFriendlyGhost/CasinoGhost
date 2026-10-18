@@ -208,6 +208,10 @@ export class Game {
   get tc() { return Math.floor(this.rc / this.decksEst + 1e-9); }
   get tcExact() { return this.rc / Math.max(this.shoe.decksLeft, 0.25); }
   get activeHand(): Hand | undefined { return this.phase === 'player' ? this.hands[this.active] : undefined; }
+  /** Cards on the felt right now (dealer and every player hand). */
+  get onTable() { return this.dealer.length + this.hands.reduce((n, h) => n + h.cards.length, 0); }
+  /** Cards in the discard tray: dealt from this shoe and already picked up. */
+  get inTray() { return Math.max(0, this.shoe.dealt - this.onTable); }
 
   /** Exact side-bet EVs for the next round, from the cards not yet dealt. */
   sideBetEVs(): Record<SideBetId, number> {

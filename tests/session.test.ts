@@ -74,3 +74,21 @@ describe('game session tracking', () => {
     expect(g.phase).toBe('betting');
   });
 });
+
+describe('discard tray', () => {
+  it('holds every dealt card except those still on the table, and empties on a new shoe', () => {
+    const g = new Game({ rules: { ...defaultRules(), decks: 2, penetration: 0.7 }, deviations: 'none', pays }, makeRng(8));
+    g.setBet(10);
+    for (let i = 0; i < 30; i++) {
+      const dealtBefore = g.shoe.dealt;
+      g.deal();
+      if (g.phase === 'insurance') g.takeInsurance(false);
+      while (g.phase === 'player') g.act(g.advice()!.action);
+      expect(g.inTray).toBe(g.shoe.dealt - g.onTable);
+      // Everything dealt before this round is now in the tray (a shuffle empties it).
+      expect(g.inTray).toBe(g.justShuffled ? 0 : dealtBefore);
+    }
+    g.newShoe();
+    expect(g.inTray).toBe(0);
+  });
+});

@@ -7,11 +7,23 @@ index plays, and exact, countable side bets (21+3, Perfect Pairs, Lucky Ladies).
 
 | Screen | What it does |
 |---|---|
-| **Table** | Animated six-deck table. Every decision is graded against the strategy generated for your rules plus Hi-Lo index plays, with the dollar cost of each mistake. Running and true count pinned to the felt, table-limits placard, deal speed (slow to instant), pause, new shoe, and a practice mode that hides the count and quizzes you. |
+| **Table** | Animated table with a real dealing shoe (cut card included) and a clear discard tray that fill and empty to scale, so you can estimate decks by eye; your bankroll racked in chips on the rail. Every decision is graded against the strategy generated for your rules plus Hi-Lo index plays, with the dollar cost of each mistake. Running and true count pinned to the felt, table-limits placard, deal speed (slow to instant), pause, new shoe, and practice modes that hide the count or the decks-left numbers and quiz you. |
 | **Dashboard** | Widgets beside the table that you choose, place left or right, and reorder: counts, cost of errors, side-bet edges, accuracy rates (hard, soft, pairs, insurance, index plays), statistics grid, stopwatch, speedometer, heat, probability curve, and charts of bankroll, true count, bet vs. count and error cost. Session stats are kept between visits until you reset them (or reset on every launch). |
 | **Side Bet Lab** | Exact house edge for any paytable and deck count, the effect of removing each card, a best-fit balanced count derived automatically for the bet, and a 20,000-shoe simulation showing the edge at every true count, when to bet, and what it's worth against perfect card tracking. |
 | **Strategy** | Basic-strategy chart solved for the current rules, the house edge with perfect play, and the index plays in use. |
 | **Rules** | Presets, every rule as a control, table limits, and a plain-English rules box ("6 decks, dealer hits soft 17, late surrender"). |
+
+## Keyboard
+
+| Between rounds | | During a hand | |
+|---|---|---|---|
+| `1` `2` `3` `4` | add a $5 / $25 / $100 / $500 chip | `H` `S` `D` `P` `R` | hit, stand, double, split, surrender |
+| `Shift` + `1`–`4` (or right-click a chip) | remove that chip | `?` | hint |
+| `←` `→` | choose the betting spot | `I` / `N` | take / decline insurance |
+| `]` / `[` | double / halve the bet on that spot | | |
+| `Backspace` / `X` | clear the spot / clear every bet | | |
+| `E` | estimate the decks left | | |
+| `Space` or `Enter` | deal | | |
 
 ## Run it on your desktop
 

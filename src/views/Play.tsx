@@ -11,7 +11,8 @@ import { SpeedContext, speedFactor, useDashboard, widgetsFor, type DashboardConf
 import { cx, money, signed } from '../lib/format';
 import { PlayingCard } from '../components/PlayingCard';
 import { FeltPrint } from '../components/FeltPrint';
-import { DashboardColumn } from '../components/widgets';
+import { DashboardColumn, DECK_GUESS_ID } from '../components/widgets';
+import { DealingShoe, DiscardTray } from '../components/ShoeTray';
 import { CustomizeDashboard } from '../components/CustomizeDashboard';
 
 type Spot = 'main' | SideBetId;
@@ -91,7 +92,33 @@ export function Play({ settings }: { settings: AppSettings }) {
   };
   const resetSession = useCallback(() => { game.resetSession(dash.startBankroll); saveSession(game.snapshot()); }, [game, dash.startBankroll]);
 
-  // Keyboard: H S D P R act, Space/Enter deals, I/N insurance, ? hint.
+  const SPOTS: Spot[] = ['pp', 't213', 'main', 'll'];
+  const focusDeckGuess = () => document.getElementById(DECK_GUESS_ID)?.focus();
+  /** Betting keys between rounds. Returns true when the key was handled. */
+  const betKeys = (e: KeyboardEvent): boolean => {
+    if (!(game.phase === 'betting' || game.phase === 'settled')) return false;
+    const digit = /^(?:Digit|Numpad)([1-4])$/.exec(e.code);
+    if (digit) {
+      const v = CHIPS[Number(digit[1]) - 1].v;
+      setStake(spot, Math.max(0, stakeOf(spot) + (e.shiftKey ? -v : v)));
+      return true;
+    }
+    switch (e.key) {
+      case 'ArrowLeft': case 'ArrowRight': {
+        const i = SPOTS.indexOf(spot), n = SPOTS.length;
+        setSpot(SPOTS[(i + (e.key === 'ArrowRight' ? 1 : n - 1)) % n]);
+        return true;
+      }
+      case 'Backspace': case 'Delete': setStake(spot, 0); return true;
+      case 'x': case 'X': game.setBet(0); for (const id of SIDE_IDS) game.setSideStake(id, 0); return true;
+      case ']': setStake(spot, stakeOf(spot) * 2); return true;
+      case '[': setStake(spot, Math.floor(stakeOf(spot) / 2)); return true;
+      case 'e': case 'E': focusDeckGuess(); return true;
+    }
+    return false;
+  };
+
+  // Keyboard: H S D P R act, Space/Enter deals, I/N insurance, ? hint, plus betting keys.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (customizing || e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -103,6 +130,8 @@ export function Play({ settings }: { settings: AppSettings }) {
       } else if (game.phase === 'insurance') {
         if (k === 'i' || k === 'y') game.takeInsurance(true);
         if (k === 'n') game.takeInsurance(false);
+      } else if (betKeys(e)) {
+        e.preventDefault();
       } else if (k === ' ' || k === 'enter') {
         // Space/Enter deals, even right after clicking a chip or betting spot; other buttons keep their usual keys.
         const t = e.target;
@@ -135,18 +164,20 @@ export function Play({ settings }: { settings: AppSettings }) {
           <ToolButton onClick={() => game.newShoe()} disabled={!canBet}><Shuffle size={15} aria-hidden /> New shoe</ToolButton>
           <div className="ml-auto flex items-center gap-1 rounded-full border border-line bg-panel p-0.5 text-xs font-semibold" role="radiogroup" aria-label="Deal speed">
             {(['slow', 'normal', 'fast', 'instant'] as const).map((sp) => (
-              <button key={sp} role="radio" aria-checked={dash.speed === sp} onClick={() => updateDash({ speed: sp })}
+              <button key={sp} role="radio" aria-checked={dash.speed === sp} onClick={(e) => { updateDash({ speed: sp }); if (e.detail) e.currentTarget.blur(); }}
                 className={cx('rounded-full px-2.5 py-1 capitalize', dash.speed === sp ? 'bg-brass text-brass-ink' : 'text-fg-2 hover:text-fg')}>{sp}</button>
             ))}
           </div>
         </div>
         {/* Table */}
-        <div className="rail rounded-[28px] p-[10px] sm:p-[14px]" style={{ ['--card-w' as string]: 'clamp(50px, 8.4vw, 88px)', ['--card-w-sm' as string]: 'clamp(42px, 6.4vw, 70px)' }}>
+        <div className="rail relative rounded-[28px] p-[10px] pb-[46px] sm:p-[14px] sm:pb-[52px]" style={{ ['--card-w' as string]: 'clamp(50px, 8.4vw, 88px)', ['--card-w-sm' as string]: 'clamp(42px, 6.4vw, 70px)' }}>
           <div className="felt felt-shape relative flex min-h-[420px] flex-col overflow-hidden rounded-[20px] sm:min-h-[500px]">
-            <ShoeGauge game={game} />
-            <TableCorner game={game} showCount={dash.pinCount && !hideCount} />
+            <div className="absolute right-3 top-3 z-10 sm:right-4 sm:top-4">
+              <DealingShoe left={game.shoe.cardsLeft} size={game.shoe.size} cut={game.shoe.cut} decks={R.decks} showNumbers={dash.deckNumbers} />
+            </div>
+            <TableCorner game={game} showCount={dash.pinCount && !hideCount} trayMarks={dash.trayMarks} onTray={focusDeckGuess} />
             {/* Dealer */}
-            <div className="flex flex-col items-center gap-2 pt-5">
+            <div className="flex flex-col items-center gap-2 pt-[124px] sm:pt-5">
               <div className="flex min-h-[calc(var(--card-w)*1.4)] items-start">
                 {game.dealer.map((c, i) => (
                   <div key={c.uid} style={{ marginLeft: i ? 'calc(var(--card-w) * -0.32)' : 0 }}>
@@ -176,6 +207,7 @@ export function Play({ settings }: { settings: AppSettings }) {
             </div>
 
           </div>
+          <BankrollRail bankroll={game.bankroll} delta={showRound ? game.roundNet : null} round={game.stats.rounds} />
         </div>
 
         {/* Controls */}
@@ -219,8 +251,12 @@ export function Play({ settings }: { settings: AppSettings }) {
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2" role="group" aria-label="Chips">
                 {CHIPS.map((c) => (
-                  <button key={c.v} data-bet-control="1" onClick={() => setStake(spot, stakeOf(spot) + c.v)} className="chip grid place-items-center rounded-full font-display text-[15px] font-extrabold text-white transition-transform hover:-translate-y-0.5 active:translate-y-0" style={{ width: 46, height: 46, background: `radial-gradient(circle at 50% 50%, ${c.bg} 0 52%, transparent 53%), repeating-conic-gradient(${c.edge} 0 15deg, ${c.bg} 15deg 30deg)`, boxShadow: '0 3px 0 rgba(0,0,0,0.35), inset 0 0 0 2px rgba(0,0,0,0.25)' }} aria-label={`Add $${c.v} to ${spotName(spot)}`}>
+                  <button key={c.v} data-bet-control="1" onClick={() => setStake(spot, stakeOf(spot) + c.v)}
+                    onContextMenu={(e) => { e.preventDefault(); setStake(spot, Math.max(0, stakeOf(spot) - c.v)); }}
+                    title={`Add $${c.v} (key ${CHIPS.indexOf(c) + 1}). Right-click or Shift+${CHIPS.indexOf(c) + 1} removes it.`}
+                    className="chip relative grid place-items-center rounded-full font-display text-[15px] font-extrabold text-white transition-transform hover:-translate-y-0.5 active:translate-y-0" style={{ width: 46, height: 46, background: `radial-gradient(circle at 50% 50%, ${c.bg} 0 52%, transparent 53%), repeating-conic-gradient(${c.edge} 0 15deg, ${c.bg} 15deg 30deg)`, boxShadow: '0 3px 0 rgba(0,0,0,0.35), inset 0 0 0 2px rgba(0,0,0,0.25)' }} aria-label={`Add $${c.v} to ${spotName(spot)}`}>
                     {c.v}
+                    <kbd className="absolute -bottom-1.5 -right-1 hidden rounded bg-panel px-1 font-data text-[9px] font-bold text-fg-2 ring-1 ring-line-strong sm:block">{CHIPS.indexOf(c) + 1}</kbd>
                   </button>
                 ))}
               </div>
@@ -228,9 +264,11 @@ export function Play({ settings }: { settings: AppSettings }) {
                 <div className="label">Betting on</div>
                 <div className="font-semibold">{spotName(spot)} · {money(stakeOf(spot))}</div>
               </div>
-              <button data-bet-control="1" onClick={() => setStake(spot, 0)} className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm text-fg-2 hover:bg-panel-2"><RotateCcw size={15} aria-hidden /> Clear</button>
+              <button data-bet-control="1" onClick={() => setStake(spot, 0)} className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm text-fg-2 hover:bg-panel-2" title="Clear this spot (Backspace)"><RotateCcw size={15} aria-hidden /> Clear</button>
+              <button data-bet-control="1" onClick={() => { game.setBet(0); for (const id of SIDE_IDS) game.setSideStake(id, 0); }} className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm text-fg-2 hover:bg-panel-2" title="Clear every bet (X)"><X size={15} aria-hidden /> Clear all</button>
               {game.mainBet > 0 && game.mainBet < game.limits.min && <span className="text-sm font-semibold text-bad">Table minimum is {money(game.limits.min)}</span>}
               <Btn primary big className="ml-auto" disabled={game.mainBet <= 0 || game.mainBet < game.limits.min} onClick={deal} kbd="Space">{phase === 'settled' ? 'Deal again' : 'Deal'}</Btn>
+              <KeyLegend />
             </div>
           )}
         </div>
@@ -254,7 +292,7 @@ export function Play({ settings }: { settings: AppSettings }) {
 
 function ToolButton({ children, onClick, pressed, disabled }: { children: React.ReactNode; onClick: () => void; pressed?: boolean; disabled?: boolean }) {
   return (
-    <button onClick={onClick} disabled={disabled} aria-pressed={pressed}
+    <button onClick={(e) => { onClick(); if (e.detail) e.currentTarget.blur(); }} disabled={disabled} aria-pressed={pressed}
       className={cx('inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40',
         pressed ? 'border-brass bg-brass-soft text-fg' : 'border-line bg-panel text-fg-2 hover:border-brass hover:text-fg')}>
       {children}
@@ -263,10 +301,11 @@ function ToolButton({ children, onClick, pressed, disabled }: { children: React.
 }
 
 /** Table-limits placard and the pinned running/true count, top-left of the felt. */
-function TableCorner({ game, showCount }: { game: Game; showCount: boolean }) {
+function TableCorner({ game, showCount, trayMarks, onTray }: { game: Game; showCount: boolean; trayMarks: boolean; onTray: () => void }) {
   const { min, max } = game.limits;
   return (
-    <div className="absolute left-3 top-3 z-10 flex flex-col items-start gap-2 sm:left-4 sm:top-4">
+    <div className="absolute left-3 top-3 z-10 flex items-start gap-3 sm:left-4 sm:top-4">
+    <div className="flex flex-col items-start gap-2">
       <div className="rounded-md bg-[#f4efe2] px-2.5 py-1 text-center leading-none text-[#1b1a16] shadow-[0_3px_0_rgba(0,0,0,0.35)]">
         <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#6b5a2e]">Limits</div>
         <div className="tnum font-display text-[17px] font-extrabold">${min.toLocaleString()}–${max.toLocaleString()}</div>
@@ -282,6 +321,61 @@ function TableCorner({ game, showCount }: { game: Game; showCount: boolean }) {
         </div>
       )}
     </div>
+    <DiscardTray inTray={game.inTray} size={game.shoe.size} decks={game.settings.rules.decks} marks={trayMarks} onClick={onTray} />
+    </div>
+  );
+}
+
+/** Chip rail in front of the seat: bankroll as chip stacks plus the amount. */
+function BankrollRail({ bankroll, delta, round }: { bankroll: number; delta: number | null; round: number }) {
+  // Rack the bankroll like a player: up to 8 of each smaller chip, the rest in $500s.
+  let rest = Math.max(0, bankroll);
+  const counts = CHIPS.map((c, i) => {
+    const n = i === CHIPS.length - 1 ? Math.floor(rest / c.v) : Math.min(8, Math.floor((rest * 0.5) / c.v));
+    rest -= n * c.v;
+    return n;
+  });
+  const stacks = CHIPS.map((c, i) => ({ ...c, n: Math.min(12, counts[i]) }));
+  return (
+    <div className="absolute bottom-[7px] left-1/2 flex -translate-x-1/2 items-end gap-3 rounded-full bg-black/40 py-1 pl-3 pr-4 ring-1 ring-[rgba(255,220,170,0.22)] sm:bottom-[9px]" aria-label={`Bankroll ${money(bankroll)}`}>
+      <div className="flex items-end gap-1" aria-hidden>
+        {stacks.map((c) => (
+          <div key={c.v} className="relative w-[20px]" style={{ height: 8 + Math.max(0, c.n - 1) * 3.5 }}>
+            {Array.from({ length: c.n }).map((_, i) => (
+              <div key={i} className="absolute left-0 h-[8px] w-[20px] rounded-[50%]" style={{ bottom: i * 3.5, background: `repeating-conic-gradient(${c.edge} 0 20deg, ${c.bg} 20deg 45deg)`, boxShadow: `0 1px 0 rgba(0,0,0,.5), inset 0 0 0 2px ${c.bg}` }} />
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="leading-none">
+        <div className="text-[9px] font-bold uppercase tracking-[0.16em] text-[#d6ac52]">Bankroll</div>
+        <div className="tnum font-display text-[22px] font-extrabold text-[#f6eedb]">{money(bankroll)}</div>
+      </div>
+      <AnimatePresence>
+        {delta !== null && delta !== 0 && (
+          <motion.span key={round} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ delay: 0.6 }}
+            className={cx('self-center rounded-full px-2 py-0.5 font-data text-xs font-bold', delta > 0 ? 'bg-[#e9fbe9] text-[#0d5c1f]' : 'bg-[#fde8e8] text-[#8a1c1c]')}>
+            {delta > 0 ? '+' : ''}{money(delta)}
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function KeyLegend() {
+  const K = ({ children }: { children: React.ReactNode }) => <kbd className="rounded bg-panel-2 px-1.5 py-0.5 font-data text-[10px] text-fg ring-1 ring-line-strong">{children}</kbd>;
+  return (
+    <p className="hidden w-full flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted sm:flex">
+      <span><K>1</K>–<K>4</K> add chip</span>
+      <span><K>Shift</K>+<K>1</K>–<K>4</K> remove chip</span>
+      <span><K>←</K><K>→</K> choose spot</span>
+      <span><K>]</K> double · <K>[</K> halve</span>
+      <span><K>⌫</K> clear spot</span>
+      <span><K>X</K> clear all</span>
+      <span><K>E</K> estimate decks</span>
+      <span><K>Space</K> deal</span>
+    </p>
   );
 }
 
@@ -376,23 +470,6 @@ function SideSpot({ id, game, selected, onSelect }: { id: SideBetId; game: Game;
         </motion.span>
       )}
     </button>
-  );
-}
-
-function ShoeGauge({ game }: { game: Game }) {
-  const left = game.shoe.cardsLeft / game.shoe.size;
-  const cut = 1 - game.shoe.cut / game.shoe.size;
-  return (
-    <div className="absolute right-4 top-4 flex items-center gap-2 text-[#efe6cf]" aria-label={`${game.shoe.decksLeft.toFixed(1)} decks left in the shoe`}>
-      <div className="text-right leading-tight">
-        <div className="font-display text-sm font-bold tracking-wide">{game.shoe.decksLeft.toFixed(1)} decks</div>
-        <div className="text-[11px] opacity-70">{game.justShuffled ? 'Fresh shoe' : 'in the shoe'}</div>
-      </div>
-      <div className="relative h-14 w-4 overflow-hidden rounded-sm bg-black/35">
-        <div className="absolute inset-x-0 bottom-0 bg-[#f4efe2]" style={{ height: `${left * 100}%`, transition: 'height .4s' }} />
-        <div className="absolute inset-x-0 h-[2px] bg-[#e5484d]" style={{ bottom: `${cut * 100}%` }} title="Cut card" />
-      </div>
-    </div>
   );
 }
 

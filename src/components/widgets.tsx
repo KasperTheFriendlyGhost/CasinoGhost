@@ -6,6 +6,7 @@ import { SIDE_IDS } from '../engine/game';
 import { SIDE_BETS, type SideBetId } from '../engine/sidebets';
 import { heat, luck, pace } from '../engine/session';
 import { WIDGETS, type DashboardConfig, type WidgetId } from '../lib/dashboard';
+import { usePref } from '../lib/settings';
 import { cx, edgePct, money, signed } from '../lib/format';
 import { BellCurve, Gauge, MiniLine, MiniScatter } from './MiniCharts';
 
@@ -57,7 +58,7 @@ export function Stat({ label, value, big, accent, tone }: { label: string; value
 
 // ----- Counts -----------------------------------------------------------------------------
 
-function CountsWidget({ game, hideCount, setHideCount }: WidgetProps) {
+function CountsWidget({ game, cfg, hideCount, setHideCount }: WidgetProps) {
   const [guess, setGuess] = useState('');
   const [verdict, setVerdict] = useState<null | { ok: boolean; rc: number }>(null);
   useEffect(() => setVerdict(null), [game.stats.rounds]);
@@ -87,7 +88,52 @@ function CountsWidget({ game, hideCount, setHideCount }: WidgetProps) {
         <div className="grid grid-cols-3 gap-2">
           <Stat label="Running" value={signed(game.rc)} big />
           <Stat label="True" value={signed(game.tc)} big accent={game.tc >= 2} />
-          <Stat label="Decks left" value={game.decksEst.toFixed(1)} big />
+          <Stat label="Decks left" value={cfg.deckNumbers ? game.decksEst.toFixed(1) : '?'} big />
+        </div>
+      )}
+    </WidgetCard>
+  );
+}
+
+// ----- Deck estimation ----------------------------------------------------------------------
+
+export const DECK_GUESS_ID = 'deck-guess';
+
+function DeckDrillWidget({ game }: WidgetProps) {
+  const [guess, setGuess] = useState('');
+  const [tally, setTally] = usePref('deckDrill', { n: 0, ok: 0, err: 0 });
+  const [last, setLast] = useState<null | { guess: number; actual: number }>(null);
+  useEffect(() => setLast(null), [game.stats.rounds]);
+  const check = (e: React.FormEvent) => {
+    e.preventDefault();
+    const g = Number(guess.replace(',', '.'));
+    if (!Number.isFinite(g) || guess.trim() === '') return;
+    const actual = game.shoe.cardsLeft / 52;
+    const ok = Math.abs(g - actual) <= 0.25; // right to the nearest half deck
+    setTally({ n: tally.n + 1, ok: tally.ok + (ok ? 1 : 0), err: tally.err + Math.abs(g - actual) });
+    setLast({ guess: g, actual });
+    setGuess('');
+  };
+  const ok = last && Math.abs(last.guess - last.actual) <= 0.25;
+  return (
+    <WidgetCard title="Deck estimation" action={tally.n > 0 ? <button onClick={() => setTally({ n: 0, ok: 0, err: 0 })} className="text-xs text-muted hover:text-fg">Reset</button> : undefined}>
+      <form onSubmit={check} className="flex flex-col gap-2">
+        <label htmlFor={DECK_GUESS_ID} className="text-sm text-fg-2">Look at the discard tray. How many decks are left in the shoe? <span className="text-muted">(press E)</span></label>
+        <div className="flex gap-2">
+          <input id={DECK_GUESS_ID} inputMode="decimal" value={guess} onChange={(e) => setGuess(e.target.value)} placeholder="e.g. 3.5"
+            className="w-full min-w-0 rounded-lg border border-line-strong bg-panel-2 px-3 py-2 font-data text-fg" />
+          <button className="rounded-lg bg-brass px-3 font-semibold text-brass-ink">Check</button>
+        </div>
+      </form>
+      {last && (
+        <p className={cx('mt-2 text-sm font-semibold', ok ? 'text-good' : 'text-bad')}>
+          {ok ? 'Right to the half deck.' : `Off by ${Math.abs(last.guess - last.actual).toFixed(1)} decks.`} <span className="font-normal text-fg-2">Actual {last.actual.toFixed(2)} decks ({game.shoe.cardsLeft} cards).</span>
+        </p>
+      )}
+      {tally.n > 0 && (
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <Stat label="Within ½ deck" value={`${Math.round((tally.ok / tally.n) * 100)}% (${tally.n})`} />
+          <Stat label="Average miss" value={`${(tally.err / tally.n).toFixed(2)} decks`} />
         </div>
       )}
     </WidgetCard>
@@ -335,6 +381,7 @@ function LogWidget({ game }: WidgetProps) {
 
 const RENDER: Record<WidgetId, (p: WidgetProps) => React.ReactNode> = {
   counts: (p) => <CountsWidget {...p} />,
+  decks: (p) => <DeckDrillWidget {...p} />,
   errors: (p) => <ErrorsWidget {...p} />,
   sidebets: (p) => <SideBetsWidget {...p} />,
   accuracy: (p) => <AccuracyWidget {...p} />,
