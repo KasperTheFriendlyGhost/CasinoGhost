@@ -111,8 +111,9 @@ struct EdgeGauge: View {
         VStack(spacing: 10) {
             if wide {
                 HStack(alignment: .center, spacing: 24) {
+                    // the 240° dial needs about 0.86 of its width, plus its caption
                     dial
-                        .frame(width: 300, height: 230)
+                        .frame(width: 300, height: 275)
                     VStack(spacing: 14) {
                         curve
                         statsRow

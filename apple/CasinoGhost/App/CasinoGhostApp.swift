@@ -148,14 +148,15 @@ struct TableScreen: View {
 enum ScreenshotDirector {
     static func prepareTable(_ t: TableModel) async {
         try? await Task.sleep(nanoseconds: 600_000_000)
+        // deal instantly until the hand to capture is on the table, so the screenshot never
+        // lands mid-deal; the hand at rest looks the same either way
         let normal = t.settings
         var instant = normal
         instant.dealSpeed = .instant
         t.update(settings: instant)
+        defer { t.update(settings: normal) }
         t.addChip(25)
         for round in 0..<30 {
-            // the round that ends up in the screenshot is dealt at the usual pace
-            if round == 12 { t.update(settings: normal) }
             while t.busy { try? await Task.sleep(nanoseconds: 50_000_000) }
             t.deal()
             try? await Task.sleep(nanoseconds: 80_000_000)
