@@ -1,5 +1,6 @@
-// Table game: one seat (up to four hands after splits), Hi-Lo running count, side bets,
-// and grading of every decision against the generated strategy + index plays.
+// Table game: up to three betting spots for the player (each splitting up to the rules' limit),
+// other players at the table playing basic strategy, Hi-Lo running count over every card seen,
+// side bets, and grading of every decision against the generated strategy + index plays.
 
 import { Shoe, valueOf, type Card, type ShoeState } from './cards';
 import { ACT, ACT_NAMES, Advisor, handInfo, houseEdge, type ActionCode, type DevMode, type Rules } from './strategy';
@@ -20,7 +21,28 @@ export interface Hand {
   surrendered: boolean;
   outcome?: HandOutcome;
   net?: number;
+  /** Betting spot the hand came from (0 with one hand). */
+  spot: number;
 }
+
+/** Another player at the table. They flat-bet and play basic strategy without counting. */
+export interface BotSeat {
+  name: string;
+  /** Acts before you: seated nearer first base. */
+  before: boolean;
+  bet: number;
+  hands: Hand[];
+}
+
+/** Who sits at the table: other players, and how many spots you play. */
+export interface Seating {
+  others: number;
+  hands: number;
+}
+
+export const MAX_OTHERS = 5;
+export const MAX_SPOTS = 3;
+const BOT_NAMES = ['Marco', 'Lena', 'Sam', 'June', 'Theo'];
 
 export type DecisionCategory = 'hard' | 'soft' | 'pair' | 'insurance';
 
@@ -73,6 +95,7 @@ export interface GameSettings {
   deviations: DevMode;
   pays: Record<SideBetId, Paytable>;
   limits?: TableLimits;
+  seating?: Seating;
 }
 
 export interface Tally { n: number; ok: number }
@@ -126,6 +149,13 @@ const MAIN_SD = 1.15;
 /** Approximate Hi-Lo edge gained per +1 true count. */
 const EDGE_PER_TC = 0.005;
 const MAX_ROUNDS = 2000;
+/** Correlation between two hands played against the same dealer hand. */
+const HAND_CORR = 0.48;
+
+// When things happen, in seconds at normal speed from the start of each action.
+const DEAL_STEP = 0.25;
+const HIT_STEP = 0.55;
+const PEEK_PAUSE = 1.0;
 
 export const SIDE_IDS: SideBetId[] = ['pp', 't213', 'll'];
 
@@ -136,7 +166,12 @@ export class Game {
   phase: Phase = 'betting';
   dealer: Card[] = [];
   holeRevealed = false;
+  /** Your hands this round, spot by spot (splits stay next to their spot). */
   hands: Hand[] = [];
+  /** Other players this round, in seat order (first base first). */
+  bots: BotSeat[] = [];
+  /** Spots you are playing this round. */
+  spots = 1;
   active = 0;
   bankroll = 1000;
   mainBet = 10;
@@ -160,6 +195,16 @@ export class Game {
   /** The player hit, stood, doubled, split or surrendered this round (false if it ended on the deal). */
   acted = false;
   private roundStart = { bet: 0, sideStake: 0, tc: 0, sideEV: 0, sideVar: 0 };
+  /** Your first two cards on spot 1, which the side bets are settled on. */
+  private firstTwo: Card[] = [];
+  // Choreography of the latest action: when each new card lands, and when the hole card turns,
+  // your turn starts and the round's result shows (seconds at normal speed).
+  private clock = 0;
+  private beats = new Map<number, number>();
+  flipAt = 0;
+  turnAt = 0;
+  resultAt = 0;
+  peekAt = 0;
   // Session clock: active time excludes pauses.
   private clockBase = 0;
   private clockStartedAt: number | null = Date.now();
@@ -215,7 +260,24 @@ export class Game {
   get tcExact() { return this.rc / Math.max(this.shoe.decksLeft, 0.25); }
   get activeHand(): Hand | undefined { return this.phase === 'player' ? this.hands[this.active] : undefined; }
   /** Cards on the felt right now (dealer and every player hand). */
-  get onTable() { return this.dealer.length + this.hands.reduce((n, h) => n + h.cards.length, 0); }
+  get onTable() {
+    const cards = (hs: Hand[]) => hs.reduce((n, h) => n + h.cards.length, 0);
+    return this.dealer.length + cards(this.hands) + this.bots.reduce((n, b) => n + cards(b.hands), 0);
+  }
+  /** Seconds (at normal speed) after the latest action before this card lands; 0 if it is not new. */
+  beat(uid: number) { return this.beats.get(uid) ?? 0; }
+  get seating(): Seating {
+    const s = this.settings.seating ?? { others: 0, hands: 1 };
+    return { others: Math.max(0, Math.min(MAX_OTHERS, Math.round(s.others))), hands: Math.max(1, Math.min(MAX_SPOTS, Math.round(s.hands))) };
+  }
+  /** The other players to draw: this round's, or who will sit down at the next deal. */
+  tableBots(): BotSeat[] {
+    if (this.bots.length || this.dealer.length) return this.bots;
+    return makeBots(this.seating.others, this.botBet);
+  }
+  private get botBet() { return Math.max(this.limits.min, Math.min(this.limits.max, 25)); }
+  /** Hands played from the same spot as h, for the split limit. */
+  private spotHands(h: Hand) { return this.hands.filter((x) => x.spot === h.spot).length; }
   /** Cards in the discard tray: dealt from this shoe and already picked up. */
   get inTray() { return Math.max(0, this.shoe.dealt - this.onTable); }
 
@@ -229,7 +291,7 @@ export class Game {
   legal() {
     const h = this.activeHand;
     if (!h || !this.up) return null;
-    return this.advisor.legal(this.advHand(h), valueOf(this.up.rank), this.hands.length);
+    return this.advisor.legal(this.advHand(h), valueOf(this.up.rank), this.spotHands(h));
   }
 
   /** The correct play for the active hand (for hints). */
@@ -244,8 +306,8 @@ export class Game {
   private correctPlay(h: Hand) {
     const upV = valueOf(this.up!.rank);
     const useDev = this.settings.deviations !== 'none';
-    const adv = this.advisor.advise(this.advHand(h), upV, this.hands.length, this.tc, useDev);
-    const vals: Float64Array = this.advisor.values(this.advHand(h), upV, this.hands.length, this.tc, useDev);
+    const adv = this.advisor.advise(this.advHand(h), upV, this.spotHands(h), this.tc, useDev);
+    const vals: Float64Array = this.advisor.values(this.advHand(h), upV, this.spotHands(h), this.tc, useDev);
     let action = adv.action as number;
     // The upstream tables have no entry for an unsplittable 10,10 (hand limit reached):
     // fall back to the best legal non-split action by EV.
@@ -274,18 +336,28 @@ export class Game {
 
   newShoe() {
     this.shoe.shuffle(); this.rc = 0; this.justShuffled = true;
-    this.phase = 'betting'; this.dealer = []; this.hands = []; this.sideResults = {};
+    this.phase = 'betting'; this.dealer = []; this.hands = []; this.bots = []; this.sideResults = {};
     this.emit();
   }
 
   private see(c: Card) { this.rc += HI_LO[valueOf(c.rank)]; return c; }
-  private draw(faceUp = true) { const c = this.shoe.draw(); return faceUp ? this.see(c) : c; }
+  /** Draw the next card; it lands `step` seconds after the previous one in this action. */
+  private draw(faceUp = true, step = HIT_STEP) {
+    const c = this.shoe.draw();
+    this.beats.set(c.uid, this.clock);
+    this.clock += step;
+    return faceUp ? this.see(c) : c;
+  }
+  /** Start the choreography of a new action. */
+  private startClock(at = 0) { this.clock = at; this.beats.clear(); this.turnAt = 0; }
 
   // ----- round flow ----------------------------------------------------------------------
 
   deal() {
     if ((this.phase !== 'betting' && this.phase !== 'settled') || this.mainBet <= 0 || this.mainBet < this.limits.min) return;
     this.resume();
+    const seating = this.seating;
+    this.spots = seating.hands;
     this.justShuffled = false;
     if (this.shoe.needsShuffle) { this.shoe.shuffle(); this.rc = 0; this.justShuffled = true; }
     this.sideEVBefore = this.sideBetEVs();
@@ -296,8 +368,8 @@ export class Game {
       const e = evaluate(id, this.shoe.remaining, this.settings.pays[id]);
       sideStake += st; sideEV += st * e.ev; sideVar += (st * sideBetSD(e)) ** 2;
     }
-    this.roundStart = { bet: this.mainBet, sideStake, tc: this.tc, sideEV, sideVar };
-    this.stats.wagered += this.mainBet + sideStake;
+    this.roundStart = { bet: this.mainBet * this.spots, sideStake, tc: this.tc, sideEV, sideVar };
+    this.stats.wagered += this.mainBet * this.spots + sideStake;
     this.sideResults = {};
     this.insurance = null;
     this.lastDecision = null;
@@ -305,14 +377,27 @@ export class Game {
     this.holeRevealed = false;
     this.acted = false;
 
-    const p1 = this.draw(), up = this.draw(), p2 = this.draw(), hole = this.draw(false);
+    // Seats in dealing order: players before you, your spots, players after you. One card each,
+    // the upcard, a second card each, then the hole card.
+    this.bots = makeBots(seating.others, this.botBet);
+    this.hands = Array.from({ length: this.spots }, (_, spot) => newHand(this.mainBet, spot));
+    const before = this.bots.filter((b) => b.before), after = this.bots.filter((b) => !b.before);
+    const order = [...before.map((b) => b.hands[0]), ...this.hands, ...after.map((b) => b.hands[0])];
+    this.startClock();
+    for (const h of order) h.cards.push(this.draw(true, DEAL_STEP));
+    const up = this.draw(true, DEAL_STEP);
+    for (const h of order) h.cards.push(this.draw(true, DEAL_STEP));
+    const hole = this.draw(false, DEAL_STEP);
     this.dealer = [up, hole];
-    this.hands = [{ cards: [p1, p2], bet: this.mainBet, doubled: false, fromSplit: false, aceSplit: false, done: false, surrendered: false }];
+    this.firstTwo = [...this.hands[0].cards];
     this.active = 0;
+    this.flipAt = 0; this.resultAt = 0;
+    // The dealer checks for blackjack once the hole card is down.
+    this.peekAt = this.beat(hole.uid) + 0.6;
 
     for (const id of ['pp', 't213'] as SideBetId[]) this.settleSide(id);
 
-    if (valueOf(up.rank) === 1 && this.settings.rules.peek) { this.phase = 'insurance'; this.emit(); return; }
+    if (valueOf(up.rank) === 1 && this.settings.rules.peek) { this.phase = 'insurance'; this.turnAt = this.clock + 0.2; this.emit(); return; }
     this.afterInsurance();
   }
 
@@ -324,8 +409,11 @@ export class Game {
       correct: take === correctTake, evCost: 0, index: correctTake ? `Insurance at TC ≥ ${this.advisor.insIdx}` : null, tc: this.tc,
       category: 'insurance', indexSpot: this.advisor.insIdx !== null,
     });
-    this.insurance = take ? this.mainBet / 2 : null;
-    if (take) { this.stats.insurances++; this.stats.wagered += this.mainBet / 2; }
+    // One decision covers every spot: half of each main bet.
+    this.insurance = take ? (this.mainBet * this.spots) / 2 : null;
+    if (take) { this.stats.insurances++; this.stats.wagered += this.insurance!; }
+    this.startClock(0.3);
+    this.peekAt = 0;
     this.afterInsurance();
   }
 
@@ -335,6 +423,9 @@ export class Game {
     return (va === 1 && vb === 10) || (va === 10 && vb === 1);
   }
 
+  /** Insurance costs half of every main bet. */
+  get insuranceCost() { return (this.mainBet * this.spots) / 2; }
+
   private isNatural(h: Hand) {
     return !h.fromSplit && h.cards.length === 2 && handInfo(h.cards.map((c) => valueOf(c.rank))).eff === 21;
   }
@@ -343,10 +434,44 @@ export class Game {
     const R = this.settings.rules;
     const upV = valueOf(this.dealer[0].rank);
     const peeked = R.peek && (upV === 1 || upV === 10);
+    if (peeked) this.clock = Math.max(this.clock, this.peekAt + PEEK_PAUSE * 0.6);
     if (peeked && this.dealerHasBJ()) { this.finish(); return; }
-    if (this.isNatural(this.hands[0])) { this.hands[0].done = true; this.finish(); return; }
-    this.phase = 'player';
-    this.emit();
+    for (const b of this.bots) for (const h of b.hands) if (this.isNatural(h)) h.done = true;
+    for (const h of this.hands) if (this.isNatural(h)) h.done = true;
+    // Players before you act first.
+    for (const b of this.bots) if (b.before) this.playBot(b);
+    this.clock += 0.2;
+    this.active = 0;
+    this.advance();
+  }
+
+  /** Another player's turn: basic strategy, no counting. */
+  private playBot(b: BotSeat) {
+    const upV = valueOf(this.up!.rank);
+    for (let i = 0; i < b.hands.length; i++) {
+      const h = b.hands[i];
+      for (let guard = 0; guard < 12; guard++) {
+        if (h.cards.length === 1) h.cards.push(this.draw());
+        const vals = h.cards.map((c) => valueOf(c.rank));
+        if (h.done || handInfo(vals).eff >= 21) { h.done = true; break; }
+        const adv = { cards: vals, fromSplit: h.fromSplit, aceSplit: h.aceSplit };
+        const lg = this.advisor.legal(adv, upV, b.hands.length);
+        if (lg.forced) { h.done = true; break; }
+        let a = this.advisor.advise(adv, upV, b.hands.length, 0, false).action as number;
+        if (!(a >= 0 && a <= 4)) a = ACT.STAND;
+        if (a === ACT.SPLIT && lg.split) {
+          const [c1, c2] = h.cards;
+          const mk = (c: Card): Hand => ({ ...newHand(b.bet, 0), cards: [c], fromSplit: true, aceSplit: c1.rank === 1 });
+          b.hands.splice(i, 1, mk(c1), mk(c2));
+          i--;
+          break;
+        }
+        if (a === ACT.DOUBLE && lg.double) { h.bet *= 2; h.doubled = true; h.cards.push(this.draw()); h.done = true; break; }
+        if (a === ACT.SURRENDER && lg.surrender) { h.surrendered = true; h.done = true; break; }
+        if (a === ACT.HIT || (a === ACT.DOUBLE && lg.hit)) { h.cards.push(this.draw()); continue; }
+        h.done = true;
+      }
+    }
   }
 
   act(action: ActionCode) {
@@ -356,6 +481,7 @@ export class Game {
     if (!ok) return;
 
     this.acted = true;
+    this.startClock(0.05);
     // Grade before acting.
     const best = this.correctPlay(h);
     const vals = best.vals;
@@ -380,7 +506,7 @@ export class Game {
       case ACT.SPLIT: {
         const [a, b] = h.cards;
         const aces = a.rank === 1;
-        const mk = (c: Card): Hand => ({ cards: [c], bet: this.mainBet, doubled: false, fromSplit: true, aceSplit: aces, done: false, surrendered: false });
+        const mk = (c: Card): Hand => ({ ...newHand(this.mainBet, h.spot), cards: [c], fromSplit: true, aceSplit: aces });
         this.stats.wagered += this.mainBet; this.stats.splits++;
         this.hands.splice(this.active, 1, mk(a), mk(b));
         break;
@@ -389,8 +515,10 @@ export class Game {
     this.advance();
   }
 
-  /** Move to the next live hand, dealing second cards to split hands as they come up. */
+  /** Move to the next live hand, dealing second cards to split hands as they come up. When
+   * your hands are done, the players after you act and the dealer plays. */
   private advance() {
+    this.phase = 'player';
     while (this.active < this.hands.length) {
       const h = this.hands[this.active];
       if (h.cards.length === 1) h.cards.push(this.draw());
@@ -399,9 +527,10 @@ export class Game {
         const t = handInfo(h.cards.map((c) => valueOf(c.rank))).eff;
         if (lg.forced || t === 21) h.done = true;
       }
-      if (!h.done) { this.emit(); return; }
+      if (!h.done) { this.turnAt = this.clock; this.emit(); return; }
       this.active++;
     }
+    for (const b of this.bots) if (!b.before) this.playBot(b);
     this.finish();
   }
 
@@ -411,34 +540,34 @@ export class Game {
     this.phase = 'settled';
     this.holeRevealed = true;
     this.see(this.dealer[1]);
+    this.flipAt = this.clock + 0.25;
+    this.clock = this.flipAt + 0.55;
     const dealerBJ = this.dealerHasBJ();
     const bust = (h: Hand) => handInfo(h.cards.map((c) => valueOf(c.rank))).eff > 21;
-    const live = this.hands.some((h) => !h.surrendered && !bust(h) && !this.isNatural(h));
+    const all = [...this.hands, ...this.bots.flatMap((b) => b.hands)];
+    const live = all.some((h) => !h.surrendered && !bust(h) && !this.isNatural(h));
     if (!dealerBJ && live) {
       for (;;) {
         const { eff, soft } = handInfo(this.dealer.map((c) => valueOf(c.rank)));
         if (eff > 17 || (eff === 17 && !(soft && R.h17))) break;
-        this.dealer.push(this.draw());
+        this.dealer.push(this.draw(true, 0.6));
       }
     }
+    this.resultAt = this.dealer.length > 2 ? this.clock - 0.1 : this.flipAt + 0.6;
     const d = handInfo(this.dealer.map((c) => valueOf(c.rank))).eff;
 
+    // Other players' hands settle too (for the table; they don't touch your bankroll).
+    for (const b of this.bots) for (const h of b.hands) settleHand(h, d, dealerBJ, R, this.isNatural(h), true);
+
     let net = 0;
+    const charged = new Set<number>();
     for (const h of this.hands) {
-      const t = handInfo(h.cards.map((c) => valueOf(c.rank))).eff;
-      if (h.surrendered) { h.outcome = 'surrender'; h.net = -h.bet / 2; }
-      else if (this.isNatural(h)) {
-        if (dealerBJ) { h.outcome = 'push'; h.net = 0; }
-        else { h.outcome = 'blackjack'; h.net = h.bet * R.bjPay; }
-      } else if (t > 21) { h.outcome = 'bust'; h.net = -h.bet; }
-      else if (dealerBJ) {
-        // No-hole-card games with "original bets only" refund doubles and splits.
-        h.outcome = 'lose';
-        h.net = !R.peek && R.obo ? (h === this.hands[0] ? -this.mainBet : 0) : -h.bet;
-      } else if (d > 21 || t > d) { h.outcome = 'win'; h.net = h.bet; }
-      else if (t === d) { h.outcome = 'push'; h.net = 0; }
-      else { h.outcome = 'lose'; h.net = -h.bet; }
-      net += h.net;
+      // No-hole-card games with "original bets only" refund doubles and splits: one original
+      // bet per spot is lost to a dealer blackjack.
+      const original = !charged.has(h.spot);
+      charged.add(h.spot);
+      settleHand(h, d, dealerBJ, R, this.isNatural(h), original);
+      net += h.net!;
       this.stats.hands++;
       if (h.outcome === 'blackjack') { this.stats.blackjacks++; this.stats.wins++; }
       else if (h.outcome === 'win') this.stats.wins++;
@@ -462,7 +591,7 @@ export class Game {
       n: this.stats.rounds, t: this.elapsed(), bet: rs.bet, sideStake: rs.sideStake, tc: rs.tc,
       net: this.roundNet, bankroll: this.bankroll, errorCost: this.stats.evLost,
       ev: rs.bet * (this.baseEdge + EDGE_PER_TC * rs.tc) + rs.sideEV - mistakes,
-      variance: (MAIN_SD * rs.bet) ** 2 + rs.sideVar,
+      variance: (MAIN_SD * this.mainBet) ** 2 * (this.spots + this.spots * (this.spots - 1) * HAND_CORR) + rs.sideVar,
     });
     if (this.rounds.length > MAX_ROUNDS) this.rounds.shift();
     this.emit();
@@ -471,7 +600,7 @@ export class Game {
   private settleSide(id: SideBetId) {
     const stake = this.sideStakes[id];
     if (!stake) return;
-    const res = settleSideBet(id, this.settings.pays[id], [this.hands[0].cards[0], this.hands[0].cards[1]], this.dealer[0], this.dealerHasBJ());
+    const res = settleSideBet(id, this.settings.pays[id], [this.firstTwo[0], this.firstTwo[1]], this.dealer[0], this.dealerHasBJ());
     this.sideResults[id] = { ...res, stake, evBefore: this.sideEVBefore[id] };
     this.roundNet += res.net * stake;
     this.stats.sideNet += res.net * stake;
@@ -493,3 +622,29 @@ export class Game {
 }
 
 export const sideBetName = (id: SideBetId) => SIDE_BETS[id].name;
+
+function newHand(bet: number, spot: number): Hand {
+  return { cards: [], bet, doubled: false, fromSplit: false, aceSplit: false, done: false, surrendered: false, spot };
+}
+
+/** Other players: the first half (rounded up) sit before you, nearer first base. */
+function makeBots(n: number, bet: number): BotSeat[] {
+  const nBefore = Math.ceil(n / 2);
+  return Array.from({ length: n }, (_, i) => ({ name: BOT_NAMES[i % BOT_NAMES.length], before: i < nBefore, bet, hands: [newHand(bet, 0)] }));
+}
+
+/** Settle one hand against the dealer's total. `original`: this hand carries the spot's original
+ * bet (what a no-hole-card, original-bets-only game takes on a dealer blackjack). */
+function settleHand(h: Hand, d: number, dealerBJ: boolean, R: Rules, natural: boolean, original: boolean) {
+  const t = handInfo(h.cards.map((c) => valueOf(c.rank))).eff;
+  const unit = h.doubled ? h.bet / 2 : h.bet;
+  if (h.surrendered) { h.outcome = 'surrender'; h.net = -h.bet / 2; }
+  else if (natural) {
+    if (dealerBJ) { h.outcome = 'push'; h.net = 0; }
+    else { h.outcome = 'blackjack'; h.net = h.bet * R.bjPay; }
+  } else if (t > 21) { h.outcome = 'bust'; h.net = -h.bet; }
+  else if (dealerBJ) { h.outcome = 'lose'; h.net = !R.peek && R.obo ? (original ? -unit : 0) : -h.bet; }
+  else if (d > 21 || t > d) { h.outcome = 'win'; h.net = h.bet; }
+  else if (t === d) { h.outcome = 'push'; h.net = 0; }
+  else { h.outcome = 'lose'; h.net = -h.bet; }
+}

@@ -59,6 +59,57 @@ describe('game engine', () => {
     }
   });
 
+  it('with other players and two spots, every card is on the table, counted and graded', () => {
+    const rules = { ...defaultRules(), decks: 6, h17: true, surrender: 'late' };
+    const g = new Game({ rules, deviations: 'i18fab4', pays, seating: { others: 3, hands: 2 } }, makeRng(21));
+    g.setBet(10);
+    const dealt: number[] = [];
+    let rounds = 0;
+    for (let i = 0; i < 3000; i++) {
+      g.deal();
+      if (g.justShuffled) dealt.length = 0;
+      if (g.phase === 'insurance') g.takeInsurance(g.advisor.insuranceCorrect(g.tc));
+      let guard = 0;
+      while (g.phase === 'player') { g.act(g.advice()!.action); if (++guard > 60) throw new Error('stuck'); }
+      expect(g.phase).toBe('settled');
+      rounds++;
+      // three other players (two before you, one after) and your two spots
+      expect(g.bots.length).toBe(3);
+      expect(g.bots.filter((b) => b.before).length).toBe(2);
+      expect(new Set(g.hands.map((h) => h.spot))).toEqual(new Set([0, 1]));
+      const table = [...g.dealer, ...g.hands.flatMap((h) => h.cards), ...g.bots.flatMap((b) => b.hands.flatMap((h) => h.cards))];
+      for (const c of table) dealt.push(valueOf(c.rank));
+      expect(g.rc).toBe(dealt.reduce((a, v) => a + HI_LO[v], 0));
+      expect(g.inTray + g.onTable).toBe(g.shoe.dealt);
+      // other players finish their hands and are settled
+      for (const b of g.bots) for (const h of b.hands) {
+        expect(h.outcome).toBeDefined();
+        expect(h.cards.length).toBeGreaterThanOrEqual(2);
+      }
+    }
+    expect(g.stats.correct).toBe(g.stats.decisions);
+    expect(g.stats.hands).toBeGreaterThanOrEqual(2 * rounds);
+    expect(g.rounds.at(-1)!.bet).toBe(20);
+  });
+
+  it('a no-hole-card dealer blackjack takes one original bet per spot', () => {
+    const rules = { ...defaultRules(), peek: false, obo: true };
+    const g = new Game({ rules, deviations: 'none', pays, seating: { others: 0, hands: 2 } }, makeRng(3));
+    g.setBet(10);
+    for (let i = 0; i < 5000; i++) {
+      g.deal();
+      while (g.phase === 'player') g.act(g.advice()!.action);
+      const d = g.dealer.map((c) => valueOf(c.rank));
+      const dealerBJ = d.length === 2 && d.includes(1) && d.includes(10);
+      const naturals = g.hands.some((h) => h.outcome === 'blackjack' || (h.outcome === 'push' && h.cards.length === 2 && !h.fromSplit));
+      if (dealerBJ && !naturals && g.hands.some((h) => h.doubled || h.fromSplit)) {
+        expect(g.roundNet).toBe(-20);
+        return;
+      }
+    }
+    throw new Error('no dealer blackjack after a double or split');
+  });
+
   it('flags a deliberate mistake with a positive EV cost', () => {
     const g = new Game({ rules: defaultRules(), deviations: 'none', pays }, makeRng(9));
     g.setBet(10);

@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { FlaskConical, Grid3x3, Settings as SettingsIcon, SlidersHorizontal, Spade } from 'lucide-react';
+import { FlaskConical, Grid3x3, Moon, Settings as SettingsIcon, SlidersHorizontal, Spade, Sun } from 'lucide-react';
 import { defaultAppPrefs, usePref, useSettings, type AppPrefs } from './lib/settings';
 import { rulesSummary } from './engine/strategy';
 import { cx } from './lib/format';
@@ -30,7 +30,7 @@ const fromHash = (): Route => {
 };
 
 function useAppPrefs() {
-  const [prefs, setPrefs] = usePref<AppPrefs>('app', defaultAppPrefs());
+  const [prefs, setPrefs] = usePref<AppPrefs>('app.v2', defaultAppPrefs());
   const p = { ...defaultAppPrefs(), ...prefs };
   useEffect(() => {
     setSoundEnabled(p.sound);
@@ -38,12 +38,13 @@ function useAppPrefs() {
     setHapticsEnabled(p.haptics);
     const root = document.documentElement;
     if (p.appearance === 'system') delete root.dataset.theme; else root.dataset.theme = p.appearance;
-    const dark = p.appearance === 'dark' || (p.appearance === 'system' && !matchMedia('(prefers-color-scheme: light)').matches);
-    syncStatusBar(dark);
+    syncStatusBar(isDark(p.appearance));
   }, [p.sound, p.volume, p.haptics, p.appearance]);
   useEffect(() => { if (isNative) document.documentElement.classList.add('native'); }, []);
   return [p, (patch: Partial<AppPrefs>) => setPrefs({ ...p, ...patch })] as const;
 }
+
+const isDark = (a: AppPrefs['appearance']) => a === 'dark' || (a === 'system' && !matchMedia('(prefers-color-scheme: light)').matches);
 
 export function App() {
   const { settings, update, updateRules } = useSettings();
@@ -80,8 +81,13 @@ export function App() {
           <button onClick={() => go('rules')} className="ml-auto hidden truncate rounded-full border border-line px-3 py-1 font-data text-xs text-fg-2 hover:border-brass md:block" title="Table rules">
             {rulesSummary(settings.rules)}
           </button>
+          <button onClick={() => { setPrefs({ appearance: isDark(prefs.appearance) ? 'light' : 'dark' }); haptic('select'); }}
+            aria-label={isDark(prefs.appearance) ? 'Switch to light mode' : 'Switch to dark mode'} title={isDark(prefs.appearance) ? 'Light mode' : 'Dark mode'}
+            className="ml-auto grid size-9 place-items-center rounded-full border border-line text-fg-2 transition-colors hover:border-brass hover:text-fg md:ml-0">
+            {isDark(prefs.appearance) ? <Sun size={17} aria-hidden /> : <Moon size={17} aria-hidden />}
+          </button>
           <button onClick={() => go('settings')} aria-label="Settings" aria-current={route === 'settings' ? 'page' : undefined}
-            className={cx('ml-auto hidden size-9 place-items-center rounded-full border transition-colors sm:grid md:ml-0', route === 'settings' ? 'border-line-strong bg-panel-2 text-fg' : 'border-line text-fg-2 hover:border-brass hover:text-fg')}>
+            className={cx('hidden size-9 place-items-center rounded-full border transition-colors sm:grid', route === 'settings' ? 'border-line-strong bg-panel-2 text-fg' : 'border-line text-fg-2 hover:border-brass hover:text-fg')}>
             <SettingsIcon size={17} aria-hidden />
           </button>
         </div>
@@ -91,7 +97,7 @@ export function App() {
         <AnimatePresence mode="wait" initial={false}>
           <motion.div key={route} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}>
             <Suspense fallback={<div className="grid h-64 place-items-center text-sm text-muted">Loading…</div>}>
-              {route === 'play' && <Play settings={settings} />}
+              {route === 'play' && <Play settings={settings} setSeating={(seating) => update({ seating })} />}
               {route === 'lab' && <Lab settings={settings} setPays={(id, pays) => update({ pays: { ...settings.pays, [id]: pays } })} />}
               {route === 'strategy' && <Strategy settings={settings} />}
               {route === 'rules' && <Rules settings={settings} updateRules={updateRules} setDeviations={(deviations) => update({ deviations })} setLimits={(limits) => update({ limits })} />}

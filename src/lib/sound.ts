@@ -53,6 +53,12 @@ function tone(c: AudioContext, at: number, freq: number, dur: number, gain: numb
   o.start(at); o.stop(at + dur + 0.02);
 }
 
+/** A struck bell: a few inharmonic partials, each decaying at its own rate. */
+function bell(c: AudioContext, at: number, freq: number, gain: number) {
+  const partials: [number, number, number][] = [[1, 1, 1.4], [2.0, 0.45, 0.9], [2.76, 0.3, 0.6], [5.4, 0.12, 0.3]];
+  for (const [mult, amp, dur] of partials) tone(c, at, freq * mult, dur, gain * amp, 'sine');
+}
+
 export const sfx = {
   /** A card sliding onto the felt. */
   card(delaySec = 0) {
@@ -71,17 +77,17 @@ export const sfx = {
     const c = audio(); if (!c) return;
     for (let i = 0; i < 26; i++) swish(c, c.currentTime + i * 0.024 + Math.random() * 0.01, 0.05, 1800 + Math.random() * 1600, 0.16);
   },
-  /** A soft two-note chime for a win. */
+  /** A bright bell chime for a winning hand: a rising third that rings out. */
   win(delaySec = 0) {
     const c = audio(); if (!c) return;
     const t = c.currentTime + delaySec;
-    tone(c, t, 880, 0.35, 0.09); tone(c, t + 0.11, 1318.5, 0.45, 0.08);
+    bell(c, t, 1046.5, 0.16); bell(c, t + 0.12, 1318.5, 0.14);
   },
-  /** A brighter arpeggio for blackjack. */
+  /** A fuller chime for blackjack: a major arpeggio up to the octave. */
   blackjack(delaySec = 0) {
     const c = audio(); if (!c) return;
     const t = c.currentTime + delaySec;
-    [784, 988, 1175, 1568].forEach((f, i) => tone(c, t + i * 0.08, f, 0.5, 0.08));
+    [784, 988, 1175, 1568].forEach((f, i) => bell(c, t + i * 0.09, f, 0.13));
   },
   /** A low, gentle note for a graded mistake. */
   mistake() {

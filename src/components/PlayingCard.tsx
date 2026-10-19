@@ -17,10 +17,12 @@ interface Props {
   collect?: boolean;
   /** The dealer lifts the corner to check for blackjack. */
   peek?: boolean;
+  /** Seconds after the deal before the peek. */
+  peekDelay?: number;
   small?: boolean;
 }
 
-export function PlayingCard({ card, faceDown = false, delay = 0, flipDelay = 0, collect = false, peek = false, small = false }: Props) {
+export function PlayingCard({ card, faceDown = false, delay = 0, flipDelay = 0, collect = false, peek = false, peekDelay = 1.35, small = false }: Props) {
   const speed = useSpeed();
   const reduce = useReducedMotion() || speed === 0;
   const anchors = useAnchors();
@@ -52,7 +54,9 @@ export function PlayingCard({ card, faceDown = false, delay = 0, flipDelay = 0, 
   useEffect(() => {
     const el = scope.current;
     if (!peek || !el || reduce) return;
-    animate(el, { y: [0, -10, 0], rotate: [0, -4, 0] }, { duration: 0.55 * speed, delay: 1.35 * speed, ease: 'easeInOut' });
+    animate(el, { y: [0, -10, 0], rotate: [0, -4, 0] }, { duration: 0.55 * speed, delay: peekDelay * speed, ease: 'easeInOut' });
+    // Once per deal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [peek, reduce, speed, animate, scope]);
 
   const label = faceDown ? 'Face-down card' : `${RANK_LABEL[card.rank]} of ${SUIT_NAME[card.suit]}`;

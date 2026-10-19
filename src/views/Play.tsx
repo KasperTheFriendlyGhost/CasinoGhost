@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Lightbulb, RotateCcw, Check, X, LayoutDashboard, Pause, Play as PlayIcon, Shuffle } from 'lucide-react';
+import { Lightbulb, RotateCcw, Check, X, LayoutDashboard, Pause, Play as PlayIcon, Shuffle, Users, Layers } from 'lucide-react';
 import { valueOf } from '../engine/cards';
-import { Game, SIDE_IDS, type Hand, type SessionSnapshot } from '../engine/game';
+import { Game, MAX_OTHERS, MAX_SPOTS, SIDE_IDS, type BotSeat, type Hand, type Seating, type SessionSnapshot } from '../engine/game';
 import { ACT, handInfo, type ActionCode } from '../engine/strategy';
 import { SIDE_BETS, type SideBetId } from '../engine/sidebets';
 import type { AppSettings } from '../lib/settings';
@@ -65,6 +65,7 @@ function useGame(settings: AppSettings, dash: DashboardConfig) {
   }, [key]);
   game.settings.pays = settings.pays;
   game.settings.limits = settings.limits;
+  game.settings.seating = settings.seating;
   const [, force] = useReducer((x: number) => x + 1, 0);
   useEffect(() => game.subscribe(force), [game]);
   // Save after every settled round.
@@ -72,7 +73,7 @@ function useGame(settings: AppSettings, dash: DashboardConfig) {
   return game;
 }
 
-export function Play({ settings }: { settings: AppSettings }) {
+export function Play({ settings, setSeating }: { settings: AppSettings; setSeating: (s: Seating) => void }) {
   const { cfg: dash, update: updateDash, reset: resetDash } = useDashboard();
   const game = useGame(settings, dash);
   const [spot, setSpot] = useState<Spot>('main');
@@ -180,12 +181,15 @@ export function Play({ settings }: { settings: AppSettings }) {
 
   const d = game.lastDecision;
   const showRound = phase === 'settled';
-  const timing = roundTiming(game);
+  const resultAt = game.resultAt;
   useEffect(() => {
     if (game.phase !== 'settled' || game.stats.rounds === 0) return;
-    const at = timing.result * speedF;
+    const at = resultAt * speedF;
     const bj = game.hands.some((h) => h.outcome === 'blackjack');
-    if (game.roundNet > 0) { sfx.chip(at); sfx.chip(at + 0.09); if (bj) sfx.blackjack(at); else sfx.win(at + 0.05); }
+    // A chime for every winning hand, one after another; chips when the round pays.
+    game.hands.filter((h) => h.outcome === 'win' || h.outcome === 'blackjack')
+      .forEach((h, i) => (h.outcome === 'blackjack' ? sfx.blackjack(at + i * 0.24) : sfx.win(at + 0.05 + i * 0.24)));
+    if (game.roundNet > 0) { sfx.chip(at); sfx.chip(at + 0.09); }
     const t = setTimeout(() => { if (game.roundNet > 0) haptic(bj ? 'success' : 'tap'); }, at * 1000);
     return () => clearTimeout(t);
     // Once per settled round.
@@ -197,7 +201,14 @@ export function Play({ settings }: { settings: AppSettings }) {
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
   }, [game]);
-  const speech = dealerSpeech(game, timing.result);
+  const speech = dealerSpeech(game);
+  const seating = settings.seating;
+  const bots = game.tableBots();
+  // Betting circles: what you'll play next while betting, this round's spots while it's dealt.
+  const spotCount = canBet ? seating.hands : game.spots;
+  const spotNet = (i: number) => game.hands.filter((h) => h.spot === i).reduce((a, h) => a + (h.net ?? 0), 0);
+  const upV = game.dealer[0] ? valueOf(game.dealer[0].rank) : 0;
+  const peeks = R.peek && (upV === 1 || upV === 10) && (phase === 'player' || (phase === 'settled' && !game.acted));
   const left = widgetsFor(dash, 'left'), right = widgetsFor(dash, 'right');
   const wp = { game, cfg: dash, hideCount, setHideCount, evs, onPickSide: (id: SideBetId) => setSpot(id) };
   const grid = left.length && right.length
@@ -210,12 +221,18 @@ export function Play({ settings }: { settings: AppSettings }) {
     <div className={cx('grid items-start gap-4', grid)}>
       <section className="min-w-0 flex flex-col gap-3">
         {/* Toolbar */}
-        <div className="flex items-center gap-2 sm:flex-wrap">
+        <div className="flex flex-wrap items-center gap-2">
           <ToolButton label="Customize dashboard" onClick={() => setCustomizing(true)}><LayoutDashboard size={15} aria-hidden /><span className="hidden sm:inline">Customize dashboard</span></ToolButton>
           <ToolButton label={game.paused ? 'Resume' : 'Pause'} onClick={() => (game.paused ? game.resume() : game.pause())} pressed={game.paused}>
             {game.paused ? <><PlayIcon size={15} aria-hidden /><span className="hidden sm:inline">Resume</span></> : <><Pause size={15} aria-hidden /><span className="hidden sm:inline">Pause</span></>}
           </ToolButton>
           <ToolButton label="New shoe" onClick={() => game.newShoe()} disabled={!canBet}><Shuffle size={15} aria-hidden /><span className="hidden sm:inline">New shoe</span></ToolButton>
+          <CycleButton icon={<Layers size={15} aria-hidden />} label="Hands" value={seating.hands} max={MAX_SPOTS} min={1}
+            title="How many spots you play, each at your main bet. Takes effect on the next deal."
+            onChange={(hands) => setSeating({ ...seating, hands })} />
+          <CycleButton icon={<Users size={15} aria-hidden />} label="Players" value={seating.others} max={MAX_OTHERS} min={0}
+            title="Other players at the table. They play basic strategy, and you count their cards too. Takes effect on the next deal."
+            onChange={(others) => setSeating({ ...seating, others })} />
           <button className="ml-auto rounded-full border border-line bg-panel px-3 py-2 text-xs font-semibold capitalize text-fg-2 sm:hidden" aria-label={`Speed: ${dash.speed}. Tap to change.`}
             onClick={() => { const order = ['slow', 'normal', 'fast', 'instant'] as const; updateDash({ speed: order[(order.indexOf(dash.speed) + 1) % order.length] }); }}>
             Speed: <span className="text-fg">{dash.speed}</span>
@@ -251,18 +268,35 @@ export function Play({ settings }: { settings: AppSettings }) {
                 {game.dealer.map((c, i) => (
                   <div key={c.uid} style={{ marginLeft: i ? 'calc(var(--card-w) * -0.32)' : 0 }}>
                     <PlayingCard card={c} faceDown={i === 1 && !game.holeRevealed} collect={collecting}
-                      delay={i === 0 ? 0.25 : i === 1 ? 0.75 : timing.draw(i)} flipDelay={timing.flip} peek={i === 1 && timing.peek} />
+                      delay={game.beat(c.uid)} flipDelay={game.flipAt} peek={i === 1 && peeks} peekDelay={game.peekAt || 0.6} />
                   </div>
                 ))}
               </div>
-              <TotalPill label={dealerLabel(game)} />
-              <DealerSays name="Ava" line={speech.line} lineKey={speech.key} delay={speech.delay * speedF} />
+              {/* The dealer's total, name and latest line share one reserved band, so nothing on the
+                  felt runs into them and each line replaces the last. */}
+              <div className="flex min-h-[34px] max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1.5 px-2">
+                <TotalPill label={dealerLabel(game)} />
+                <DealerSays name="Ava" line={speech.line} lineKey={speech.key} delay={speech.delay * speedF} />
+              </div>
             </div>
+
+            {/* Other players: those before you on the left, those after you on the right */}
+            {bots.length > 0 && (
+              <div className="relative z-10 mt-2 flex items-start justify-between gap-1 px-1.5 sm:gap-2 sm:px-5" style={{ ['--card-w-sm' as string]: 'clamp(30px, 4.2vw, 50px)' }}>
+                <div className="flex items-start gap-1.5 sm:gap-4">
+                  {bots.filter((b) => b.before).map((b, i) => <BotSeatView key={b.name} seat={b} game={game} lift={i} showResult={showRound && !collecting} resultDelay={resultAt * speedF} collect={collecting} />)}
+                </div>
+                <div className="flex flex-row-reverse items-start gap-1.5 sm:gap-4">
+                  {bots.filter((b) => !b.before).reverse().map((b, i) => <BotSeatView key={b.name} seat={b} game={game} lift={i} showResult={showRound && !collecting} resultDelay={resultAt * speedF} collect={collecting} />)}
+                </div>
+              </div>
+            )}
 
             {/* Player hands */}
             <div className="relative z-10 mt-auto flex flex-wrap items-end justify-center gap-x-6 gap-y-3 px-3 pb-1">
               {game.hands.map((h, i) => (
-                <HandView key={i} hand={h} active={game.activeHand === h} small={game.hands.length > 2} firstDeal={i === 0 && !h.fromSplit} showResult={showRound} resultDelay={timing.result * speedF} collect={collecting} />
+                <HandView key={i} hand={h} game={game} active={game.activeHand === h} small={game.hands.length > 2}
+                  label={game.spots > 1 ? `Hand ${h.spot + 1}` : undefined} showResult={showRound} resultDelay={resultAt * speedF} collect={collecting} />
               ))}
             </div>
 
@@ -271,12 +305,15 @@ export function Play({ settings }: { settings: AppSettings }) {
               {SIDE_IDS.slice(0, 2).map((id) => (
                 <SideSpot key={id} id={id} game={game} selected={canBet && spot === id} onSelect={() => setSpot(id)} />
               ))}
-              <BetSpot amount={game.mainBet} selected={canBet && spot === 'main'} onSelect={() => setSpot('main')} result={showRound && !collecting ? game.roundNet : null} resultDelay={timing.result * speedF} round={game.stats.rounds} />
+              {Array.from({ length: spotCount }, (_, i) => (
+                <BetSpot key={i} amount={game.mainBet} selected={canBet && spot === 'main'} onSelect={() => setSpot('main')} n={spotCount > 1 ? i + 1 : undefined}
+                  result={showRound && !collecting && i < game.spots ? spotNet(i) : null} resultDelay={resultAt * speedF} round={game.stats.rounds} />
+              ))}
               <SideSpot id="ll" game={game} selected={canBet && spot === 'll'} onSelect={() => setSpot('ll')} />
             </div>
 
           </div>
-          <BankrollRail bankroll={game.bankroll} delta={showRound && !collecting ? game.roundNet : null} round={game.stats.rounds} delay={timing.result * speedF} />
+          <BankrollRail bankroll={game.bankroll} delta={showRound && !collecting ? game.roundNet : null} round={game.stats.rounds} delay={resultAt * speedF} />
         </div>
 
         {/* Controls */}
@@ -295,7 +332,7 @@ export function Play({ settings }: { settings: AppSettings }) {
                 </Toast>
               ) : (
                 <motion.p key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-muted max-sm:line-clamp-1">
-                  {phase === 'player' ? 'Your move. Every decision is graded against the correct play for this count.' : phase === 'insurance' ? 'Insurance is only worth it at a true count of +3 or more.' : 'Tap a betting spot, add chips, then deal.'}
+                  {phase === 'player' ? 'Your move. Every decision is graded against the correct play for this count.' : phase === 'insurance' ? 'Insurance is only worth it at a true count of +3 or more.' : seating.hands > 1 ? 'Your main bet goes on every hand; side bets ride on hand 1.' : 'Tap a betting spot, add chips, then deal.'}
                 </motion.p>
               )}
             </AnimatePresence>
@@ -307,7 +344,7 @@ export function Play({ settings }: { settings: AppSettings }) {
           </div>
           {phase === 'insurance' ? (
             <div className="flex flex-wrap items-center gap-3">
-              <p className="mr-auto font-medium">Dealer shows an ace. Insurance costs {money(game.mainBet / 2)}.</p>
+              <p className="mr-auto font-medium">Dealer shows an ace. Insurance costs {money(game.insuranceCost)}{game.spots > 1 ? ' (half of each bet)' : ''}.</p>
               <Btn onClick={() => insure(true)} kbd="I">Take insurance</Btn>
               <Btn primary onClick={() => insure(false)} kbd="N">No insurance</Btn>
             </div>
@@ -335,7 +372,7 @@ export function Play({ settings }: { settings: AppSettings }) {
               </div>
               <div className="order-3 text-sm leading-tight sm:order-none">
                 <div className="label">Betting on</div>
-                <div className="font-semibold">{spotName(spot)} · {money(stakeOf(spot))}</div>
+                <div className="font-semibold">{spotName(spot)} · {money(stakeOf(spot))}{spot === 'main' && seating.hands > 1 ? ` × ${seating.hands} hands` : ''}</div>
               </div>
               <button data-bet-control="1" onClick={() => setStake(spot, 0)} className="order-4 inline-flex items-center sm:order-none gap-1 rounded-full px-3 py-2 text-sm text-fg-2 hover:bg-panel-2" title="Clear this spot (Backspace)"><RotateCcw size={15} aria-hidden /> Clear</button>
               <button data-bet-control="1" onClick={() => { game.setBet(0); for (const id of SIDE_IDS) game.setSideStake(id, 0); }} className="order-5 inline-flex items-center sm:order-none gap-1 rounded-full px-3 py-2 text-sm text-fg-2 hover:bg-panel-2" title="Clear every bet (X)"><X size={15} aria-hidden /> Clear all</button>
@@ -478,33 +515,20 @@ function KeyLegend() {
   );
 }
 
-/** When things happen in a round, in seconds at normal speed. */
-function roundTiming(g: Game) {
-  const settled = g.phase === 'settled';
-  const upV = g.dealer[0] ? valueOf(g.dealer[0].rank) : 0;
-  const peek = g.settings.rules.peek && (upV === 1 || upV === 10) && (g.phase === 'player' || (settled && !g.acted));
-  // Turn the hole card right away after the player's last move; if the round ended on the deal,
-  // wait for the deal (and the dealer's peek) to finish first.
-  const flip = settled ? (g.acted || g.insurance !== null ? 0.3 : peek ? 2.0 : 1.2) : 0;
-  const draw = (i: number) => (settled ? flip + 0.55 + (i - 2) * 0.6 : 0);
-  const result = settled ? (g.dealer.length > 2 ? draw(g.dealer.length - 1) + 0.5 : flip + 0.6) : 0;
-  return { flip, draw, result, peek };
-}
-
 const cardName = (rank: number) => (rank === 1 ? 'an ace' : rank === 8 ? 'an eight' : rank > 10 ? 'a ten' : `a ${RANK_LABEL[rank]}`);
 
 /** What the dealer says, and when (delay in seconds at normal speed). */
-function dealerSpeech(g: Game, resultDelay: number): { line: string; key: string; delay: number } {
+function dealerSpeech(g: Game): { line: string; key: string; delay: number } {
   const n = g.stats.rounds;
   if (!g.dealer.length) return { line: g.justShuffled ? 'Fresh shoe. Place your bets, please.' : 'Place your bets, please.', key: `bets-${n}`, delay: 0 };
   const up = g.dealer[0];
-  if (g.phase === 'insurance') return { line: 'Insurance? Dealer shows an ace.', key: `ins-${n}`, delay: 0.9 };
+  if (g.phase === 'insurance') return { line: 'Insurance? Dealer shows an ace.', key: `ins-${n}`, delay: g.turnAt };
   if (g.phase === 'player') {
     const h = g.activeHand!;
     const { eff, soft } = handInfo(h.cards.map((c) => valueOf(c.rank)));
     const which = g.hands.length > 1 ? `Hand ${g.active + 1} of ${g.hands.length}: ` : '';
     const peeked = g.settings.rules.peek && [1, 10].includes(valueOf(up.rank)) && !g.acted ? 'No blackjack. ' : '';
-    return { line: `${peeked}${which}${soft ? 'soft ' : ''}${eff} against ${cardName(up.rank)}.`, key: `p-${n}-${g.active}-${h.cards.length}`, delay: g.acted ? 0 : 1.0 };
+    return { line: `${peeked}${which}${soft ? 'soft ' : ''}${eff} against ${cardName(up.rank)}.`, key: `p-${n}-${g.active}-${h.cards.length}`, delay: g.turnAt };
   }
   if (g.phase === 'settled') {
     const vals = g.dealer.map((c) => valueOf(c.rank));
@@ -519,7 +543,7 @@ function dealerSpeech(g: Game, resultDelay: number): { line: string; key: string
     else line = `Dealer has ${eff}.`;
     const net = g.roundNet;
     if (!outcomes.includes('blackjack')) line += net > 0 ? ` You win ${money(net)}.` : net < 0 ? '' : ' Push.';
-    return { line, key: `s-${n}`, delay: resultDelay };
+    return { line, key: `s-${n}`, delay: g.resultAt };
   }
   return { line: '', key: 'none', delay: 0 };
 }
@@ -536,7 +560,7 @@ function dealerLabel(g: Game): string {
 }
 
 function TotalPill({ label }: { label: string }) {
-  return <div className="rounded-full bg-black/35 px-3 py-0.5 font-display text-[15px] font-bold tracking-wide text-[#f6eedb]">{label}</div>;
+  return <div className="whitespace-nowrap rounded-full bg-black/35 px-3 py-0.5 font-display text-[15px] font-bold tracking-wide text-[#f6eedb]">{label}</div>;
 }
 
 const OUTCOME: Record<string, { text: string; tone: 'good' | 'bad' | 'neutral' }> = {
@@ -544,7 +568,7 @@ const OUTCOME: Record<string, { text: string; tone: 'good' | 'bad' | 'neutral' }
   lose: { text: 'Lose', tone: 'bad' }, bust: { text: 'Bust', tone: 'bad' }, surrender: { text: 'Surrendered', tone: 'neutral' },
 };
 
-function HandView({ hand, active, small, firstDeal, showResult, resultDelay, collect }: { hand: Hand; active: boolean; small: boolean; firstDeal: boolean; showResult: boolean; resultDelay: number; collect: boolean }) {
+function HandView({ hand, game, active, small, label: spotLabel, showResult, resultDelay, collect }: { hand: Hand; game: Game; active: boolean; small: boolean; label?: string; showResult: boolean; resultDelay: number; collect: boolean }) {
   const { eff, soft } = handInfo(hand.cards.map((c) => valueOf(c.rank)));
   const natural = !hand.fromSplit && hand.cards.length === 2 && eff === 21;
   const label = natural ? 'Blackjack' : eff > 21 ? `Bust · ${eff}` : `${soft && eff < 21 ? 'Soft ' : ''}${eff}`;
@@ -554,11 +578,12 @@ function HandView({ hand, active, small, firstDeal, showResult, resultDelay, col
       <div className="flex">
         {hand.cards.map((c, i) => (
           <div key={c.uid} style={{ marginLeft: i ? `calc(var(${small ? '--card-w-sm' : '--card-w'}) * -0.58)` : 0, marginTop: i ? `calc(var(--card-w) * ${-0.0 + i * 0.06})` : 0 }}>
-            <PlayingCard card={c} small={small} collect={collect} delay={firstDeal && i === 0 ? 0 : firstDeal && i === 1 ? 0.5 : 0} />
+            <PlayingCard card={c} small={small} collect={collect} delay={game.beat(c.uid)} />
           </div>
         ))}
       </div>
       <div className="flex items-center gap-1.5">
+        {spotLabel && <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#f6eedb]/70">{spotLabel}</span>}
         <TotalPill label={label} />
         {hand.doubled && <span className="rounded-full bg-brass px-2 py-0.5 text-[11px] font-bold text-brass-ink">2×</span>}
         <AnimatePresence>
@@ -586,10 +611,12 @@ function ChipStack({ amount }: { amount: number }) {
   );
 }
 
-function BetSpot({ amount, selected, onSelect, result, resultDelay, round }: { amount: number; selected: boolean; onSelect: () => void; result: number | null; resultDelay: number; round: number }) {
+function BetSpot({ amount, selected, onSelect, result, resultDelay, round, n }: { amount: number; selected: boolean; onSelect: () => void; result: number | null; resultDelay: number; round: number; n?: number }) {
   const won = result !== null && result > 0, lost = result !== null && result < 0;
   return (
-    <button data-bet-control="1" onClick={onSelect} className={cx('relative grid place-items-center rounded-full border-2 transition-colors', selected ? 'border-brass bg-black/15' : 'border-[rgba(255,240,205,0.4)]')} style={{ width: 'clamp(68px, 15vw, 92px)', aspectRatio: '1' }} aria-label={`Main bet ${money(amount)}`}>
+    <button data-bet-control="1" onClick={onSelect} className={cx('relative grid place-items-center rounded-full border-2 transition-colors', selected ? 'border-brass bg-black/15' : 'border-[rgba(255,240,205,0.4)]')}
+      style={{ width: n ? 'clamp(54px, 11vw, 82px)' : 'clamp(68px, 15vw, 92px)', aspectRatio: '1' }} aria-label={`${n ? `Hand ${n}` : 'Main'} bet ${money(amount)}`}>
+      {n && <span className="absolute -left-1 -top-1 grid size-5 place-items-center rounded-full bg-black/55 font-data text-[10px] font-bold text-[#f6eedb] ring-1 ring-[rgba(255,240,205,0.35)]">{n}</span>}
       {amount > 0 ? (
         <motion.div key={`bet-${round}-${lost}`} initial={false} animate={lost ? { y: -240, opacity: 0, scale: 0.7 } : { y: 0, opacity: 1, scale: 1 }}
           transition={{ delay: lost ? resultDelay : 0, duration: lost ? 0.55 : 0.2, ease: [0.4, 0, 0.2, 1] }}>
@@ -626,6 +653,62 @@ function SideSpot({ id, game, selected, onSelect }: { id: SideBetId; game: Game;
           {res.key ? `Wins ${res.net}:1` : 'No win'}
         </motion.span>
       )}
+    </button>
+  );
+}
+
+/** Another player's seat: their cards, total, result and name. The result sits over the cards so
+ * the seat never grows wider than its hand. */
+function BotSeatView({ seat, game, lift, showResult, resultDelay, collect }: { seat: BotSeat; game: Game; lift: number; showResult: boolean; resultDelay: number; collect: boolean }) {
+  const dealt = seat.hands.some((h) => h.cards.length);
+  return (
+    <div className="flex flex-col items-center gap-1" style={{ marginTop: lift * 10 }}>
+      <div className="relative flex min-h-[calc(var(--card-w-sm)*1.4)] items-start gap-1.5">
+        {dealt ? seat.hands.map((h, k) => {
+          const o = showResult && h.outcome ? OUTCOME[h.outcome] : null;
+          return (
+            <div key={k} className="relative flex">
+              {h.cards.map((c, i) => (
+                <div key={c.uid} style={{ marginLeft: i ? 'calc(var(--card-w-sm) * -0.62)' : 0, marginTop: i ? `calc(var(--card-w-sm) * ${i * 0.08})` : 0 }}>
+                  <PlayingCard card={c} small collect={collect} delay={game.beat(c.uid)} />
+                </div>
+              ))}
+              {o && (
+                <motion.span initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: resultDelay }}
+                  className={cx('absolute bottom-1 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold shadow', o.tone === 'good' ? 'bg-[#e9fbe9] text-[#0d5c1f]' : o.tone === 'bad' ? 'bg-[#fde8e8] text-[#8a1c1c]' : 'bg-[#f1efe8] text-[#3b3a35]')}>
+                  {o.text === 'Surrendered' ? 'Surr.' : o.text === 'Blackjack' ? 'BJ' : o.text}
+                </motion.span>
+              )}
+            </div>
+          );
+        }) : <div className="grid size-[calc(var(--card-w-sm)*1.05)] place-items-center rounded-full border border-dashed border-[rgba(255,240,205,0.3)]" aria-hidden><ChipDot /></div>}
+      </div>
+      {dealt && (
+        <div className="flex items-center gap-1 leading-none">
+          {seat.hands.map((h, k) => {
+            const { eff, soft } = handInfo(h.cards.map((c) => valueOf(c.rank)));
+            return <span key={k} className="rounded-full bg-black/35 px-1.5 py-0.5 font-data text-[10.5px] font-bold text-[#f6eedb]">{h.cards.length === 2 && eff === 21 && !h.fromSplit ? 'BJ' : `${soft && eff < 21 ? 's' : ''}${eff}`}</span>;
+          })}
+        </div>
+      )}
+      <span className="text-[10.5px] font-semibold leading-none text-[#f6eedb]/75">{seat.name}</span>
+    </div>
+  );
+}
+
+/** A single chip, marking another player's bet before the deal. */
+function ChipDot() {
+  const c = CHIPS[1];
+  return <div className="size-5 rounded-full" style={{ background: `radial-gradient(circle, ${c.bg} 0 50%, transparent 51%), repeating-conic-gradient(${c.edge} 0 15deg, ${c.bg} 15deg 30deg)`, boxShadow: '0 2px 0 rgba(0,0,0,0.4)' }} />;
+}
+
+/** A small control that steps through a range on each tap: "Hands 2", "Players 3". */
+function CycleButton({ icon, label, value, min, max, title, onChange }: { icon: React.ReactNode; label: string; value: number; min: number; max: number; title: string; onChange: (v: number) => void }) {
+  return (
+    <button onClick={(e) => { onChange(value >= max ? min : value + 1); haptic('select'); if (e.detail) e.currentTarget.blur(); }} title={title}
+      aria-label={`${label}: ${value}. Tap to change.`}
+      className="inline-flex items-center gap-1.5 rounded-full border border-line bg-panel px-3 py-2 text-sm font-semibold text-fg-2 transition-colors hover:border-brass hover:text-fg sm:py-1.5">
+      {icon}<span className="hidden sm:inline">{label}</span><span className="tnum font-data text-fg">{value}</span>
     </button>
   );
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { defaultRules, type DevMode, type Rules } from '../engine/strategy';
 import { defaultPaytable, type Paytable, type SideBetId } from '../engine/sidebets';
-import type { TableLimits } from '../engine/game';
+import type { Seating, TableLimits } from '../engine/game';
 import { store } from './native';
 
 export interface AppSettings {
@@ -9,6 +9,8 @@ export interface AppSettings {
   deviations: DevMode;
   pays: Record<SideBetId, Paytable>;
   limits: TableLimits;
+  /** Other players at the table and how many spots you play. */
+  seating: Seating;
 }
 
 const KEY = 'casinoghost:settings:v1';
@@ -19,6 +21,7 @@ export function defaultSettings(): AppSettings {
     deviations: 'i18fab4',
     pays: { pp: defaultPaytable('pp'), t213: defaultPaytable('t213'), ll: defaultPaytable('ll') },
     limits: { min: 5, max: 1000 },
+    seating: { others: 2, hands: 1 },
   };
 }
 
@@ -28,7 +31,7 @@ function load(): AppSettings {
     const raw = store.get(KEY);
     if (!raw) return base;
     const s = JSON.parse(raw);
-    return { ...base, ...s, rules: { ...base.rules, ...s.rules }, pays: { ...base.pays, ...s.pays }, limits: { ...base.limits, ...s.limits } };
+    return { ...base, ...s, rules: { ...base.rules, ...s.rules }, pays: { ...base.pays, ...s.pays }, limits: { ...base.limits, ...s.limits }, seating: { ...base.seating, ...s.seating } };
   } catch {
     return base;
   }
@@ -65,4 +68,4 @@ export interface AppPrefs {
   appearance: Appearance;
 }
 
-export const defaultAppPrefs = (): AppPrefs => ({ sound: true, volume: 0.6, haptics: true, appearance: 'system' });
+export const defaultAppPrefs = (): AppPrefs => ({ sound: true, volume: 0.6, haptics: true, appearance: 'dark' });

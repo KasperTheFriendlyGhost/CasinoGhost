@@ -53,13 +53,14 @@ export function ChipRack() {
 /** Nameplate and the dealer's latest line, on one row. */
 export function DealerSays({ name, line, lineKey, delay }: { name: string; line: string; lineKey: string; delay: number }) {
   return (
-    <div className="pointer-events-none flex h-[28px] max-w-[min(440px,86vw)] items-center gap-2" aria-live="polite">
-      <div className="shrink-0 rounded-full bg-black/45 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-[#e2c27a] ring-1 ring-[#e2c27a]/30">{name}</div>
-      <AnimatePresence mode="wait">
+    <div className="pointer-events-none flex min-h-[28px] min-w-0 max-w-[min(440px,78vw)] items-center gap-2" aria-live="polite">
+      <div className="shrink-0 rounded-full bg-[#1a1712] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-[#e2c27a] ring-1 ring-[#e2c27a]/30">{name}</div>
+      {/* One line at a time: the last one leaves before the next arrives, so they never overlap. */}
+      <AnimatePresence mode="wait" initial={false}>
         {line && (
           <motion.div key={lineKey} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0, transition: { duration: 0.25, delay } }}
-            exit={{ opacity: 0, transition: { duration: 0.12 } }}
-            className="relative min-w-0 truncate rounded-2xl rounded-tl-sm bg-[#fbf7ee] px-3 py-1 text-[12.5px] font-semibold text-[#2a2418] shadow-[0_4px_14px_rgba(0,0,0,.35)]">
+            exit={{ opacity: 0, transition: { duration: 0.1 } }}
+            className="relative min-w-0 line-clamp-2 rounded-2xl rounded-tl-sm bg-[#fbf7ee] px-3 py-1 text-[12.5px] font-semibold leading-snug text-[#2a2418] shadow-[0_4px_14px_rgba(0,0,0,.35)]">
             {line}
           </motion.div>
         )}
