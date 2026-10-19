@@ -1085,7 +1085,10 @@ pub struct TableConfig {
     pub pays: Vec<Vec<f64>>,
     pub min_bet: f64,
     pub max_bet: f64,
+    /// Other players: the first half (rounded up) act before you, the rest after.
     pub bots: u32,
+    /// Betting spots you play at the main bet, 1 to 3.
+    pub spots: u32,
 }
 
 #[derive(uniffi::Record, Clone, Copy, Debug, PartialEq, Eq)]
@@ -1115,6 +1118,8 @@ pub struct TableHand {
     pub net: f64,
     pub total: u32,
     pub soft: bool,
+    /// Betting spot the hand came from (0 with one hand).
+    pub spot: u32,
 }
 
 fn outcome_out(o: game::Outcome) -> Outcome {
@@ -1143,6 +1148,7 @@ impl From<&game::Hand> for TableHand {
             net: h.net,
             total,
             soft,
+            spot: h.spot as u32,
         }
     }
 }
@@ -1298,6 +1304,12 @@ pub struct TableState {
     pub hands: Vec<TableHand>,
     pub active: u32,
     pub bots: Vec<Vec<TableHand>>,
+    /// How many of `bots` act before you (seated nearer first base).
+    pub bots_before: u32,
+    /// Spots in play this round.
+    pub spots: u32,
+    /// What insurance costs: half of every main bet.
+    pub insurance_cost: f64,
     pub bankroll: f64,
     pub main_bet: f64,
     pub side_stakes: Vec<f64>,
@@ -1362,6 +1374,7 @@ fn settings_from(c: &TableConfig) -> GameSettings {
         min_bet: c.min_bet,
         max_bet: c.max_bet,
         bots: c.bots.min(6),
+        spots: c.spots.clamp(1, game::MAX_SPOTS),
     }
 }
 
@@ -1405,6 +1418,9 @@ impl TableGame {
             hands: g.hands.iter().map(Into::into).collect(),
             active: g.active as u32,
             bots: g.bots.iter().map(|b| b.iter().map(Into::into).collect()).collect(),
+            bots_before: g.bots_before() as u32,
+            spots: g.spots as u32,
+            insurance_cost: g.insurance_cost(),
             bankroll: g.bankroll,
             main_bet: g.main_bet,
             side_stakes: g.side_stakes.clone(),

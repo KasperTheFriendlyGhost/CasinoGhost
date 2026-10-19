@@ -69,8 +69,9 @@ struct ControlsBar: View {
     private var insurance: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Insurance?").font(.headline)
-                Text("Pays 2 to 1 if the dealer has blackjack.").font(.caption).foregroundStyle(.secondary)
+                Text("Insurance? \(Fmt.money(model.state.insuranceCost))").font(.headline)
+                Text(model.state.spots > 1 ? "Half of each bet. Pays 2 to 1 if the dealer has blackjack." : "Pays 2 to 1 if the dealer has blackjack.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             Button("No") { model.insurance(false) }.buttonStyle(GhostButtonStyle())

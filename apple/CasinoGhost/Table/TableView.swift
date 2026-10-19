@@ -109,38 +109,60 @@ struct FeltView: View {
         VStack(spacing: 6) {
             HandCards(cards: model.dealer, width: cardWidth, collecting: model.collecting)
                 .frame(minHeight: cardWidth * 1.45)
-            HStack(spacing: 8) {
-                if !model.dealer.isEmpty {
-                    let t = TableModel.total(model.dealer)
-                    TotalPill(total: t.total, soft: t.soft)
-                }
-                DealerSays(line: model.dealerLine, id: model.dealerLineID)
+            // the dealer's total and her latest line: side by side when they fit, stacked when not
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { dealerTotal; DealerSays(line: model.dealerLine, id: model.dealerLineID) }
+                VStack(spacing: 6) { dealerTotal; DealerSays(line: model.dealerLine, id: model.dealerLineID) }
             }
-            .frame(height: 30)
+            .frame(minHeight: 30)
+            .padding(.horizontal, 8)
         }
     }
 
-    private var botsRow: some View {
-        HStack(alignment: .top) {
-            ForEach(Array(model.bots.enumerated()), id: \.offset) { i, hands in
-                VStack(spacing: 3) {
-                    HStack(spacing: 6) {
-                        ForEach(hands) { h in
-                            HandCards(cards: h.cards, width: cardWidth * 0.58, collecting: model.collecting)
-                        }
-                    }
-                    if let h = hands.first, !h.cards.isEmpty {
-                        let t = TableModel.total(h.cards)
-                        Text(t.soft && t.total < 21 ? "Soft \(t.total)" : "\(t.total)")
-                            .font(.data(10, weight: .bold))
-                            .foregroundStyle(Theme.ink.opacity(0.8))
-                    }
-                    Text("Player \(i + 1)").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.print.opacity(0.6))
-                }
-                .frame(maxWidth: .infinity)
-            }
+    @ViewBuilder private var dealerTotal: some View {
+        if !model.dealer.isEmpty {
+            let t = TableModel.total(model.dealer)
+            TotalPill(total: t.total, soft: t.soft)
         }
-        .padding(.horizontal, 12)
+    }
+
+    static let botNames = ["Marco", "Lena", "Sam", "June", "Theo", "Nora"]
+
+    /// Other players: those who act before you on the left, those after you on the right, and
+    /// the gap between them is your seat.
+    private var botsRow: some View {
+        let s = model.state
+        let before = min(Int(s.botsBefore), model.bots.count)
+        return HStack(alignment: .top, spacing: 6) {
+            ForEach(0..<before, id: \.self) { i in botSeat(i, s) }
+            Spacer(minLength: compact ? 8 : 40)
+            ForEach(before..<model.bots.count, id: \.self) { i in botSeat(i, s) }
+        }
+        .padding(.horizontal, 10)
+    }
+
+    private func botSeat(_ i: Int, _ s: TableState) -> some View {
+        let hands = model.bots[i]
+        return VStack(spacing: 3) {
+            HStack(spacing: 4) {
+                ForEach(Array(hands.enumerated()), id: \.element.id) { k, h in
+                    HandCards(cards: h.cards, width: cardWidth * 0.5, collecting: model.collecting)
+                        .overlay(alignment: .bottom) {
+                            // the result sits on the cards, so a seat never grows wider than its hand
+                            if model.showOutcome, s.bots.indices.contains(i), s.bots[i].indices.contains(k), let o = s.bots[i][k].outcome {
+                                MiniOutcome(outcome: o).offset(y: -4)
+                            }
+                        }
+                }
+            }
+            if let h = hands.first, !h.cards.isEmpty {
+                let t = TableModel.total(h.cards)
+                Text(t.soft && t.total < 21 ? "Soft \(t.total)" : "\(t.total)")
+                    .font(.data(10, weight: .bold))
+                    .foregroundStyle(Theme.ink.opacity(0.85))
+            }
+            Text(Self.botNames[i % Self.botNames.count]).font(.system(size: 9.5, weight: .semibold)).foregroundStyle(Theme.print.opacity(0.7))
+        }
     }
 
     private func playerArea(_ s: TableState) -> some View {
@@ -154,6 +176,11 @@ struct FeltView: View {
                             RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.brass, lineWidth: active ? 2 : 0)
                         )
                     HStack(spacing: 6) {
+                        if s.spots > 1, s.hands.indices.contains(i) {
+                            Text("HAND \(s.hands[i].spot + 1)")
+                                .font(.system(size: 9, weight: .heavy)).tracking(1)
+                                .foregroundStyle(Theme.ink.opacity(0.7))
+                        }
                         if !h.cards.isEmpty {
                             let t = TableModel.total(h.cards)
                             TotalPill(total: t.total, soft: t.soft, highlight: active)
@@ -170,28 +197,48 @@ struct FeltView: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: model.hands.count)
     }
 
+    /// Side bets around your betting circles: one circle per hand you play, numbered when
+    /// there's more than one. The side bets ride on hand 1.
     private func spots(_ s: TableState) -> some View {
-        HStack(alignment: .center, spacing: compact ? 10 : 18) {
-            ForEach(BetSpot.allCases) { spot in
-                BetSpotView(spot: spot, amount: model.stake(spot), selected: model.canBet && model.selectedSpot == spot,
-                            result: result(for: spot, s), size: compact ? 58 : 68)
-                    .onTapGesture {
-                        guard model.canBet else { return }
-                        model.selectedSpot = spot
-                        Haptics.select()
+        let n = model.canBet ? app.settings.spots : max(1, Int(s.spots))
+        let size: CGFloat = n > 1 ? (compact ? 46 : 58) : (compact ? 58 : 68)
+        return HStack(alignment: .center, spacing: compact ? (n > 1 ? 6 : 10) : 16) {
+            ForEach([BetSpot.perfectPairs, .twentyOnePlusThree], id: \.self) { spotView($0, s, size: size) }
+            ForEach(0..<n, id: \.self) { k in
+                spotView(.main, s, size: size, index: k)
+                    .overlay(alignment: .topLeading) {
+                        if n > 1 {
+                            Text("\(k + 1)")
+                                .font(.data(10, weight: .heavy)).foregroundStyle(Theme.ink)
+                                .frame(width: 18, height: 18)
+                                .background(Color.black.opacity(0.6), in: Circle())
+                        }
                     }
-                    .onLongPressGesture { model.clear(spot) }
             }
+            spotView(.luckyLadies, s, size: size)
         }
     }
 
-    private func result(for spot: BetSpot, _ s: TableState) -> Double? {
+    private func spotView(_ spot: BetSpot, _ s: TableState, size: CGFloat, index: Int = 0) -> some View {
+        BetSpotView(spot: spot, amount: model.stake(spot), selected: model.canBet && model.selectedSpot == spot,
+                    result: result(for: spot, s, index: index), size: size)
+            .onTapGesture {
+                guard model.canBet else { return }
+                model.selectedSpot = spot
+                Haptics.select()
+            }
+            .onLongPressGesture { model.clear(spot) }
+    }
+
+    private func result(for spot: BetSpot, _ s: TableState, index: Int = 0) -> Double? {
         guard model.showOutcome, s.phase == .settled else { return nil }
         if let bet = spot.sideBet {
             guard let r = s.sideResults.first(where: { $0.bet == bet }) else { return nil }
             return r.net * r.stake
         }
-        return s.hands.isEmpty ? nil : s.hands.reduce(0) { $0 + $1.net } + insuranceResult(s)
+        let mine = s.hands.filter { Int($0.spot) == index }
+        guard !mine.isEmpty else { return nil }
+        return mine.reduce(0) { $0 + $1.net } + (index == 0 ? insuranceResult(s) : 0)
     }
 
     private func insuranceResult(_ s: TableState) -> Double {
@@ -285,7 +332,8 @@ private struct CountChip: View {
     }
 }
 
-/// The dealer's nameplate and what she says.
+/// The dealer's nameplate and what she says. One bubble whose text cross-fades in place, so a
+/// new line never appears beside the old one.
 struct DealerSays: View {
     let line: String
     let id: Int
@@ -296,20 +344,20 @@ struct DealerSays: View {
                 .font(.system(size: 10, weight: .heavy)).tracking(1.5)
                 .foregroundStyle(Theme.brass)
                 .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(Color.black.opacity(0.45), in: Capsule())
+                .background(Color(hex: 0x1A1712), in: Capsule())
                 .overlay(Capsule().strokeBorder(Theme.brass.opacity(0.5)))
             Text(line)
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(Color(hex: 0x1B1A16))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .contentTransition(.opacity)
                 .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Color(hex: 0xFBF7EC), in: Capsule())
+                .background(Color(hex: 0xFBF7EC), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
-                .id(id)
-                .transition(.asymmetric(insertion: .scale(scale: 0.85, anchor: .leading).combined(with: .opacity), removal: .opacity))
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: id)
+        .animation(.easeInOut(duration: 0.22), value: id)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Dealer: \(line)")
     }

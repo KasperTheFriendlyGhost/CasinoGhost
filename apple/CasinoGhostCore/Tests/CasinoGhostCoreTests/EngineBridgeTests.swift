@@ -26,7 +26,7 @@ final class EngineBridgeTests: XCTestCase {
         let config = TableConfig(
             rules: defaultRules(), count: hilo, trueCount: defaultTrueCountRule(),
             plays: publishedIndices(rules: defaultRules(), set: .i18), insuranceIndex: hiloInsuranceIndex(),
-            useIndices: true, pays: sideBets().map { $0.presets[0].pays }, minBet: 5, maxBet: 500, bots: 1)
+            useIndices: true, pays: sideBets().map { $0.presets[0].pays }, minBet: 5, maxBet: 500, bots: 1, spots: 1)
         let table = TableGame(config: config, session: nil, bankroll: 1000, seed: 7)
         XCTAssertTrue(table.deal())
         var guardCount = 0

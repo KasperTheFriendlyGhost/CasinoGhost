@@ -71,6 +71,17 @@ def tone(freq, dur, gain, shape="sine"):
     return out
 
 
+def bell(freq, gain):
+    """A struck bell: a few inharmonic partials, each decaying at its own rate."""
+    partials = [(1.0, 1.0, 1.4), (2.0, 0.45, 0.9), (2.76, 0.3, 0.6), (5.4, 0.12, 0.3)]
+    n = int(max(d for _, _, d in partials) * SR)
+    out = [0.0] * n
+    for mult, amp, dur in partials:
+        for i, v in enumerate(tone(freq * mult, dur, gain * amp)):
+            out[i] += v
+    return out
+
+
 def mix(length, parts):
     buf = [0.0] * int(length * SR)
     for start, s in parts:
@@ -90,8 +101,9 @@ def main():
         a, b = 2350 + rnd.uniform(0, 200), 3150 + rnd.uniform(0, 250)
         write(f"chip{k}", mix(0.14, [(0, tone(a, 0.07, 0.5, "triangle")), (0.035, tone(b, 0.06, 0.38, "triangle"))]))
     write("shuffle", mix(0.9, [(i * 0.024 + rnd.uniform(0, 0.01), swish(0.05, 1800 + rnd.uniform(0, 1600), 0.5, rnd)) for i in range(30)]))
-    write("win", mix(0.7, [(0, tone(880, 0.35, 0.45)), (0.11, tone(1318.5, 0.45, 0.4))]))
-    write("blackjack", mix(1.0, [(i * 0.08, tone(f, 0.5, 0.35)) for i, f in enumerate([784, 988, 1175, 1568])]))
+    # a bright bell chime for a winning hand (a rising third), a fuller arpeggio for blackjack
+    write("win", mix(1.6, [(0, bell(1046.5, 0.24)), (0.12, bell(1318.5, 0.21))]))
+    write("blackjack", mix(1.9, [(i * 0.09, bell(f, 0.2)) for i, f in enumerate([784, 988, 1175, 1568])]))
     write("mistake", mix(0.3, [(0, tone(196, 0.22, 0.6))]))
     write("flip", mix(0.1, [(0, swish(0.06, 1500, 0.7, rnd))]))
     print("wrote", sorted(os.listdir(OUT)))

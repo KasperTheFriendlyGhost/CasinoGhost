@@ -54,7 +54,9 @@ enum Appearance: String, Codable, CaseIterable, Identifiable {
 struct AppSettings: Codable, Equatable {
     var rules: GameRules = defaultRules()
     /// Table conditions; `otherPlayers` is the number of other players seated with you.
-    var table: TableSetup = TableSetup(otherPlayers: 0, roundsPerHour: 90, minBet: 25, maxBet: 1000)
+    var table: TableSetup = TableSetup(otherPlayers: 2, roundsPerHour: 90, minBet: 25, maxBet: 1000)
+    /// Spots you play at the main bet (1 to 3).
+    var spots: Int = 1
     var countId: String = "hilo"
     var trueCount: TrueCountRule = defaultTrueCountRule()
     var indexMode: IndexMode = .i18fab4
@@ -68,7 +70,7 @@ struct AppSettings: Codable, Equatable {
     var sound: Bool = true
     var volume: Double = 0.7
     var haptics: Bool = true
-    var appearance: Appearance = .system
+    var appearance: Appearance = .dark
     var showDashboard: Bool = true
 
     init() {}
@@ -81,7 +83,7 @@ struct AppSettings: Codable, Equatable {
     var countLabel: String { count.balanced ? "TC" : "RC" }
 
     private enum Keys: String, CodingKey {
-        case rules, table, countId, trueCount, indexMode, pays, startingBankroll, dealSpeed, pinCount
+        case rules, table, spots, countId, trueCount, indexMode, pays, startingBankroll, dealSpeed, pinCount
         case revealExactEdge, handSignals, sound, volume, haptics, appearance, showDashboard
     }
 
@@ -91,6 +93,7 @@ struct AppSettings: Codable, Equatable {
         let d = AppSettings()
         rules = (try? c.decodeIfPresent(GameRules.self, forKey: .rules)) ?? d.rules
         table = (try? c.decodeIfPresent(TableSetup.self, forKey: .table)) ?? d.table
+        spots = min(3, max(1, (try? c.decodeIfPresent(Int.self, forKey: .spots)) ?? d.spots))
         countId = (try? c.decodeIfPresent(String.self, forKey: .countId)) ?? d.countId
         trueCount = (try? c.decodeIfPresent(TrueCountRule.self, forKey: .trueCount)) ?? d.trueCount
         indexMode = (try? c.decodeIfPresent(IndexMode.self, forKey: .indexMode)) ?? d.indexMode
@@ -111,6 +114,7 @@ struct AppSettings: Codable, Equatable {
         var c = encoder.container(keyedBy: Keys.self)
         try c.encode(rules, forKey: .rules)
         try c.encode(table, forKey: .table)
+        try c.encode(spots, forKey: .spots)
         try c.encode(countId, forKey: .countId)
         try c.encode(trueCount, forKey: .trueCount)
         try c.encode(indexMode, forKey: .indexMode)
@@ -137,11 +141,12 @@ struct AppSettings: Codable, Equatable {
         var minBet: Double
         var maxBet: Double
         var bots: UInt32
+        var spots: Int
     }
 
     var gameKey: GameKey {
         GameKey(rules: rules, countId: countId, trueCount: trueCount, indexMode: indexMode, pays: pays,
-                minBet: table.minBet, maxBet: table.maxBet, bots: table.otherPlayers)
+                minBet: table.minBet, maxBet: table.maxBet, bots: table.otherPlayers, spots: spots)
     }
 }
 

@@ -63,11 +63,17 @@ pub struct Hand {
     pub surrendered: bool,
     pub outcome: Option<Outcome>,
     pub net: f64,
+    /// Betting spot the hand came from (0 with one hand).
+    #[serde(default)]
+    pub spot: u8,
 }
 
 impl Hand {
     fn new(bet: f64) -> Hand {
-        Hand { cards: vec![], bet, doubled: false, from_split: false, ace_split: false, done: false, surrendered: false, outcome: None, net: 0.0 }
+        Hand { cards: vec![], bet, doubled: false, from_split: false, ace_split: false, done: false, surrendered: false, outcome: None, net: 0.0, spot: 0 }
+    }
+    fn at_spot(bet: f64, spot: u8) -> Hand {
+        Hand { spot, ..Hand::new(bet) }
     }
     pub fn values(&self) -> Vec<u8> {
         self.cards.iter().map(|c| c.value()).collect()
@@ -185,9 +191,16 @@ pub struct GameSettings {
     pub pays: Vec<Vec<f64>>,
     pub min_bet: f64,
     pub max_bet: f64,
-    /// Other players at the table (play basic strategy, act before you).
+    /// Other players at the table, playing basic strategy. The first half (rounded up) sit
+    /// before you and act first; the rest act after you.
     pub bots: u32,
+    /// Betting spots you play, each at the main bet (1 to 3).
+    pub spots: u32,
 }
+
+pub const MAX_SPOTS: u32 = 3;
+/// Correlation between two hands played against the same dealer hand.
+const HAND_CORR: f64 = 0.48;
 
 /// What is saved between visits.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -236,6 +249,10 @@ pub struct Game {
     events: Vec<Event>,
     side_evs_before: Vec<f64>,
     pending_peek: bool,
+    /// Spots in play this round.
+    pub spots: usize,
+    /// Your first two cards on spot 1: what the side bets settle on.
+    first_two: [Card; 2],
     round_start: (f64, f64, f64, f64, f64),
     clock_base_ms: f64,
     clock_started: Option<std::time::Instant>,
@@ -252,7 +269,9 @@ impl Game {
         let mut advisor = Advisor::new(&rules, settings.plays.clone(), if rules.peek { settings.insurance_index } else { None });
         advisor.plays = crate::strategy::applicable(&settings.plays, &rules, &advisor.strategy, crate::strategy::IndexSet::Full);
         let base_edge = -crate::strategy::house_edge(&rules, &advisor.strategy);
-        let cut = rules.cut_card(settings.bots);
+        let spots = settings.spots.clamp(1, MAX_SPOTS);
+        let settings = GameSettings { spots, ..settings };
+        let cut = rules.cut_card(settings.bots + spots - 1);
         let shoe = Shoe::new(rules.decks, cut, rng);
         let irc2 = settings.count.irc2(rules.decks);
         Game {
@@ -282,6 +301,8 @@ impl Game {
             events: vec![],
             side_evs_before: vec![0.0; 3],
             pending_peek: false,
+            spots: spots as usize,
+            first_two: [Card { rank: 1, suit: 0 }; 2],
             round_start: (0.0, 0.0, 0.0, 0.0, 0.0),
             clock_base_ms: 0.0,
             clock_started: Some(now()),
@@ -387,6 +408,14 @@ impl Game {
     pub fn active_hand(&self) -> Option<&Hand> {
         if self.phase == Phase::Player { self.hands.get(self.active) } else { None }
     }
+    /// Other players who act before you.
+    pub fn bots_before(&self) -> usize {
+        (self.bots.len() + 1) / 2
+    }
+    /// Hands played from the same spot as `h`, for the split limit.
+    fn spot_hands(&self, h: &Hand) -> u32 {
+        self.hands.iter().filter(|x| x.spot == h.spot).count() as u32
+    }
 
     /// The composition the player can't see: undealt cards plus the face-down hole card.
     pub fn unseen_comp(&self) -> Comp {
@@ -425,7 +454,7 @@ impl Game {
     pub fn legal(&self) -> Option<Legal> {
         let h = self.active_hand()?;
         let (vals, fs, asp) = Self::view(h);
-        Some(crate::strategy::legal(&self.settings.rules, &HandView { cards: &vals, from_split: fs, ace_split: asp }, self.hands.len() as u32))
+        Some(crate::strategy::legal(&self.settings.rules, &HandView { cards: &vals, from_split: fs, ace_split: asp }, self.spot_hands(h)))
     }
 
     /// The correct play for the active hand, and the index that decided it.
@@ -441,7 +470,7 @@ impl Game {
         let (vals, fs, asp) = Self::view(h);
         let view = HandView { cards: &vals, from_split: fs, ace_split: asp };
         let count = self.count();
-        let adv = self.advisor.advise(&view, up, self.hands.len() as u32, count, self.settings.use_indices);
+        let adv = self.advisor.advise(&view, up, self.spot_hands(h), count, self.settings.use_indices);
         let ev = self.exact_values(h, up);
         let mut action = adv.action;
         if !adv.legal.allows(action) || ev[action as usize].is_nan() && action != STAND {
@@ -575,8 +604,10 @@ impl Game {
                 side_var += (st * e.sd).powi(2);
             }
         }
-        self.round_start = (self.main_bet, side_stake, count0, side_ev, side_var);
-        self.stats.wagered += self.main_bet + side_stake;
+        self.spots = self.settings.spots.clamp(1, MAX_SPOTS) as usize;
+        let total_bet = self.main_bet * self.spots as f64;
+        self.round_start = (total_bet, side_stake, count0, side_ev, side_var);
+        self.stats.wagered += total_bet + side_stake;
         self.side_results.clear();
         self.insurance = None;
         self.last_decision = None;
@@ -587,19 +618,28 @@ impl Game {
 
         let n_bots = self.settings.bots as usize;
         self.bots = (0..n_bots).map(|_| vec![Hand::new(1.0)]).collect();
-        self.hands = vec![Hand::new(self.main_bet)];
+        self.hands = (0..self.spots).map(|s| Hand::at_spot(self.main_bet, s as u8)).collect();
         self.dealer.clear();
-        // one card each (bots first), upcard, second card each, hole card
+        // seat order: players before you, your spots, players after you; one card each, the
+        // upcard, a second card each, then the hole card
+        let before = self.bots_before();
         for pass in 0..2 {
-            for b in 0..n_bots {
+            for b in 0..before {
                 let c = self.draw_to(Seat::Bot(b as u8), 0, true);
                 self.bots[b][0].cards.push(c);
             }
-            let c = self.draw_to(Seat::Player, 0, true);
-            self.hands[0].cards.push(c);
+            for s in 0..self.spots {
+                let c = self.draw_to(Seat::Player, s as u8, true);
+                self.hands[s].cards.push(c);
+            }
+            for b in before..n_bots {
+                let c = self.draw_to(Seat::Bot(b as u8), 0, true);
+                self.bots[b][0].cards.push(c);
+            }
             let dc = self.draw_to(Seat::Dealer, 0, pass == 0);
             self.dealer.push(dc);
         }
+        self.first_two = [self.hands[0].cards[0], self.hands[0].cards[1]];
         self.active = 0;
         self.side_evs_before = evs;
         for b in [0usize, 1] {
@@ -634,11 +674,18 @@ impl Game {
             index_spot: self.advisor.insurance_index.is_some(),
         });
         if take {
-            self.insurance = Some(self.main_bet / 2.0);
+            // one decision covers every spot: half of each main bet
+            let cost = self.insurance_cost();
+            self.insurance = Some(cost);
             self.stats.insurances += 1;
-            self.stats.wagered += self.main_bet / 2.0;
+            self.stats.wagered += cost;
         }
         self.after_insurance();
+    }
+
+    /// Insurance costs half of every main bet.
+    pub fn insurance_cost(&self) -> f64 {
+        self.main_bet * self.spots as f64 / 2.0
     }
 
     fn dealer_has_bj(&self) -> bool {
@@ -650,35 +697,38 @@ impl Game {
         let rules = self.settings.rules;
         let up = self.dealer[0].value();
         let peeked = rules.peek && (up == 1 || up == 10);
+        for h in self.hands.iter_mut() {
+            if h.is_natural() {
+                h.done = true;
+            }
+        }
         if peeked && self.dealer_has_bj() {
-            if rules.surrender == Surrender::Early && !self.hands[0].is_natural() {
-                // early surrender comes before the peek: give the player that one decision
+            if rules.surrender == Surrender::Early && self.hands.iter().any(|h| !h.done) {
+                // early surrender comes before the peek: one decision for each hand
                 self.pending_peek = true;
                 self.phase = Phase::Player;
+                self.active = self.hands.iter().position(|h| !h.done).unwrap_or(0);
                 return;
             }
-            self.play_bots();
             self.finish();
             return;
         }
-        self.play_bots();
-        if self.hands[0].is_natural() {
-            self.hands[0].done = true;
-            self.finish();
-            return;
-        }
+        let before = self.bots_before();
+        self.play_bots(0..before);
         self.phase = Phase::Player;
+        self.active = 0;
+        self.advance();
     }
 
-    /// Other players act before you, by basic strategy.
-    fn play_bots(&mut self) {
+    /// Other players in `seats` take their turns, by basic strategy.
+    fn play_bots(&mut self, seats: std::ops::Range<usize>) {
         let up = self.dealer[0].value() as usize;
         let rules = self.settings.rules;
         let peeked_bj = rules.peek && self.dealer_has_bj();
         if peeked_bj {
             return;
         }
-        for b in 0..self.bots.len() {
+        for b in seats {
             let mut i = 0;
             while i < self.bots[b].len() {
                 loop {
@@ -761,12 +811,18 @@ impl Game {
         });
 
         if self.pending_peek {
-            // early-surrender game with a dealer blackjack waiting: the first decision decides
-            self.pending_peek = false;
+            // early-surrender game with a dealer blackjack waiting: each hand's first decision
+            // decides it
+            let i = self.active;
             if action == SURRENDER {
-                self.hands[0].surrendered = true;
-                self.hands[0].done = true;
+                self.hands[i].surrendered = true;
             }
+            self.hands[i].done = true;
+            if let Some(next) = self.hands.iter().position(|h| !h.done) {
+                self.active = next;
+                return true;
+            }
+            self.pending_peek = false;
             self.finish();
             return true;
         }
@@ -797,7 +853,8 @@ impl Game {
             _ => {
                 let (a, b) = (h.cards[0], h.cards[1]);
                 let aces = a.rank == 1;
-                let mk = |c: Card, bet: f64| Hand { cards: vec![c], from_split: true, ace_split: aces, ..Hand::new(bet) };
+                let spot = h.spot;
+                let mk = |c: Card, bet: f64| Hand { cards: vec![c], from_split: true, ace_split: aces, ..Hand::at_spot(bet, spot) };
                 self.stats.wagered += self.main_bet;
                 self.stats.splits += 1;
                 self.hands.splice(i..=i, [mk(a, self.main_bet), mk(b, self.main_bet)]);
@@ -808,8 +865,10 @@ impl Game {
         true
     }
 
-    /// Move to the next live hand, dealing second cards to split hands as they come up.
+    /// Move to the next live hand, dealing second cards to split hands as they come up. When
+    /// your hands are done, the players after you act and the dealer plays.
     fn advance(&mut self) {
+        self.phase = Phase::Player;
         while self.active < self.hands.len() {
             let i = self.active;
             if self.hands[i].cards.len() == 1 {
@@ -827,6 +886,8 @@ impl Game {
             }
             self.active += 1;
         }
+        let before = self.bots_before();
+        self.play_bots(before..self.bots.len());
         self.finish();
     }
 
@@ -858,7 +919,10 @@ impl Game {
 
         let mut net = 0.0;
         let main_bet = self.main_bet;
-        for (hi, h) in self.hands.iter_mut().enumerate() {
+        let mut charged = [false; MAX_SPOTS as usize];
+        for h in self.hands.iter_mut() {
+            // no-hole-card "original bets only": one original bet per spot goes to a blackjack
+            let original = !std::mem::replace(&mut charged[(h.spot as usize).min(MAX_SPOTS as usize - 1)], true);
             let t = h.total().0;
             let (o, n) = if h.surrendered {
                 (Outcome::Surrender, -h.bet / 2.0)
@@ -868,7 +932,7 @@ impl Game {
                 (Outcome::Bust, -h.bet)
             } else if dealer_bj {
                 // no-hole-card "original bets only" refunds doubles and splits
-                (Outcome::Lose, if !rules.peek && rules.obo { if hi == 0 { -main_bet } else { 0.0 } } else { -h.bet })
+                (Outcome::Lose, if !rules.peek && rules.obo { if original { -main_bet } else { 0.0 } } else { -h.bet })
             } else if d > 21 || t > d {
                 (Outcome::Win, h.bet)
             } else if t == d {
@@ -939,7 +1003,7 @@ impl Game {
             bankroll: self.bankroll,
             error_cost: self.stats.ev_lost,
             ev: bet * edge + side_ev - mistakes,
-            variance: (1.15 * bet).powi(2) + side_var,
+            variance: (1.15 * self.main_bet).powi(2) * (self.spots as f64 * (1.0 + (self.spots as f64 - 1.0) * HAND_CORR)) + side_var,
         });
         if self.rounds.len() > MAX_ROUNDS {
             self.rounds.remove(0);
@@ -953,7 +1017,7 @@ impl Game {
             return;
         }
         let bet = sidebets::ALL[i];
-        let p = [self.hands[0].cards[0], self.hands[0].cards[1]];
+        let p = self.first_two;
         let (outcome, net) = sidebets::settle(bet, &self.settings.pays[i], p, self.dealer[0], self.dealer_has_bj());
         let label = outcome.map(|o| bet.outcomes()[o].label.to_string()).unwrap_or_else(|| "No win".into());
         self.side_results.push(SideResult { bet, stake, outcome, label, net, ev_before: self.side_evs_before.get(i).copied().unwrap_or(0.0) });
@@ -1010,7 +1074,50 @@ mod tests {
             min_bet: 5.0,
             max_bet: 500.0,
             bots: 2,
+            spots: 1,
         }
+    }
+
+    #[test]
+    fn several_spots_and_players_on_both_sides() {
+        let rules = Rules { surrender: Surrender::Late, ..Rules::default() };
+        let mut g = Game::new(GameSettings { bots: 3, spots: 2, ..settings(rules) }, Rng::new(17));
+        g.set_bet(10.0);
+        let mut seen = 0i32;
+        for _ in 0..3000 {
+            assert!(g.deal());
+            if g.just_shuffled {
+                seen = g.settings.count.irc2(g.settings.rules.decks);
+            }
+            if g.phase == Phase::Insurance {
+                let take = g.advisor.insurance_correct(g.count());
+                g.take_insurance(take);
+            }
+            let mut guard = 0;
+            while g.phase == Phase::Player {
+                let (a, _) = g.advice().unwrap();
+                assert!(g.act(a));
+                guard += 1;
+                assert!(guard < 60);
+            }
+            assert_eq!(g.phase, Phase::Settled);
+            // two of the three other players sit before you
+            assert_eq!(g.bots_before(), 2);
+            let mut spots: Vec<u8> = g.hands.iter().map(|h| h.spot).collect();
+            spots.dedup();
+            assert_eq!(spots, vec![0, 1]);
+            // every card on the table is counted, and every other player's hand settles
+            let table = g.dealer.iter().chain(g.hands.iter().flat_map(|h| h.cards.iter())).chain(g.bots.iter().flatten().flat_map(|h| h.cards.iter()));
+            for c in table {
+                seen += g.settings.count.tag2(c.card_type());
+            }
+            assert_eq!(g.rc2, seen);
+            assert_eq!(g.in_tray() + g.on_table(), g.shoe.dealt());
+            assert!(g.bots.iter().flatten().all(|h| h.outcome.is_some() && h.cards.len() >= 2));
+        }
+        assert_eq!(g.stats.correct, g.stats.decisions);
+        assert!(g.stats.hands >= 6000);
+        assert_eq!(g.rounds.last().unwrap().bet, 20.0);
     }
 
     fn autoplay(g: &mut Game, rounds: usize) {

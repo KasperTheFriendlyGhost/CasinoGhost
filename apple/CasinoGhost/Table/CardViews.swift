@@ -181,6 +181,31 @@ struct TotalPill: View {
 }
 
 /// Result badge after a round.
+/// A small result tag for another player's hand.
+struct MiniOutcome: View {
+    let outcome: Outcome
+
+    var body: some View {
+        let (text, color): (String, Color) = {
+            switch outcome {
+            case .blackjack: return ("BJ", Theme.brass)
+            case .win: return ("Win", Theme.good)
+            case .push: return ("Push", Color.gray)
+            case .lose: return ("Lose", Theme.bad)
+            case .bust: return ("Bust", Theme.bad)
+            case .surrender: return ("Surr.", Color.gray)
+            }
+        }()
+        Text(text)
+            .font(.system(size: 9.5, weight: .heavy))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(color.gradient, in: Capsule())
+            .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+            .transition(.scale(scale: 0.6).combined(with: .opacity))
+    }
+}
+
 struct OutcomeBadge: View {
     let outcome: Outcome
     let net: Double

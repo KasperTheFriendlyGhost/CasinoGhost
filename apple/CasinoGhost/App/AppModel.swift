@@ -275,7 +275,7 @@ final class AppModel {
     static func config(_ s: AppSettings, _ p: (plays: [IndexEntry], insurance: Double?)) -> TableConfig {
         TableConfig(rules: s.rules, count: s.count, trueCount: s.trueCount, plays: p.plays, insuranceIndex: p.insurance,
                     useIndices: s.indexMode != .none, pays: s.pays, minBet: s.table.minBet, maxBet: s.table.maxBet,
-                    bots: s.table.otherPlayers)
+                    bots: s.table.otherPlayers, spots: UInt32(s.spots))
     }
 
     /// A new table for new rules, carrying the session (bankroll, stats, and the shoe if it fits).

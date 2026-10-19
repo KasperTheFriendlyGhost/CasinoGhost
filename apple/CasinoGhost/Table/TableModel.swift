@@ -420,15 +420,17 @@ final class TableModel {
         withAnimation(.easeOut(duration: 0.2)) { mistake = nil }
     }
 
+    /// A chime for every winning hand, one after another (a fuller one for blackjack).
     private func settleFeedback() {
         let net = state.roundNet
-        let blackjack = state.hands.contains { $0.outcome == .blackjack }
-        if blackjack {
-            SoundPlayer.shared.blackjack()
+        let winners = state.hands.filter { $0.outcome == .win || $0.outcome == .blackjack }
+        for (i, h) in winners.enumerated() {
+            let at = Double(i) * 0.24
+            if h.outcome == .blackjack { SoundPlayer.shared.blackjack(after: at) } else { SoundPlayer.shared.win(after: at) }
+        }
+        if !winners.isEmpty || net > 0 {
             Haptics.success()
-        } else if net > 0 {
-            SoundPlayer.shared.win()
-            Haptics.success()
+            if net > 0 { SoundPlayer.shared.chip(after: 0.05) }
         } else if net < 0 {
             SoundPlayer.shared.chip(after: 0.1)
         }
@@ -450,7 +452,9 @@ final class TableModel {
             guard s.hands.indices.contains(activeHand), let up = s.dealer.first else { return }
             let h = s.hands[activeHand]
             let label = h.soft ? "soft \(h.total)" : "\(h.total)"
-            say("\(label.prefix(1).uppercased() + label.dropFirst()) against \(Self.article(up)).")
+            let which = s.hands.count > 1 ? "Hand \(activeHand + 1) of \(s.hands.count): " : ""
+            let text = "\(label.prefix(1).uppercased() + label.dropFirst()) against \(Self.article(up))."
+            say(which.isEmpty ? text : which + text.prefix(1).lowercased() + text.dropFirst())
         case .settled:
             let d = s.dealer
             let dealerBJ = d.count == 2 && s.dealerTotal == 21

@@ -101,13 +101,14 @@ struct RulesScreen: View {
 
                 Section {
                     Stepper("Other players: \(s.table.otherPlayers)", value: app.binding(\.table.otherPlayers), in: 0...6)
+                    Stepper("Your hands: \(s.spots)", value: app.binding(\.spots), in: 1...3)
                     Stepper("Rounds per hour: \(Int(s.table.roundsPerHour))", value: app.binding(\.table.roundsPerHour), in: 40...250, step: 10)
                     Stepper("Minimum bet: \(Fmt.money(s.table.minBet))", value: app.binding(\.table.minBet), in: 5...500, step: 5)
                     Stepper("Maximum bet: \(Fmt.money(s.table.maxBet))", value: app.binding(\.table.maxBet), in: 100...25_000, step: 100)
                 } header: {
                     Text("Table")
                 } footer: {
-                    Text("Other players take cards you have to count, and slow the game down.")
+                    Text("Other players take cards you have to count, and slow the game down. Those before you act first; those after you see more cards. Playing more hands puts your main bet on each; side bets ride on hand 1.")
                 }
 
                 Section {

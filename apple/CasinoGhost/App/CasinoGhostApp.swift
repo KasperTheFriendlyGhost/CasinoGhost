@@ -124,6 +124,15 @@ struct TableScreen: View {
                         Picker("Dealing speed", selection: app.binding(\.dealSpeed)) {
                             ForEach(DealSpeed.allCases) { Text($0.label).tag($0) }
                         }
+                        Picker("Your hands", selection: app.binding(\.spots)) {
+                            ForEach(1...3, id: \.self) { Text($0 == 1 ? "1 hand" : "\($0) hands").tag($0) }
+                        }
+                        Picker("Other players", selection: app.binding(\.table.otherPlayers)) {
+                            ForEach(0...6, id: \.self) { Text($0 == 0 ? "Just you" : "\($0) other player\($0 == 1 ? "" : "s")").tag(UInt32($0)) }
+                        }
+                        Picker("Theme", selection: app.binding(\.appearance)) {
+                            ForEach(Appearance.allCases) { Text($0.label).tag($0) }
+                        }
                         Toggle("Pin the count to the table", isOn: app.binding(\.pinCount))
                         Toggle("Show the true edge", isOn: app.binding(\.revealExactEdge))
                         Toggle("Hand signals", isOn: app.binding(\.handSignals))
