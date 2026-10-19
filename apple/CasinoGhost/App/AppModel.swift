@@ -210,7 +210,9 @@ final class AppModel {
         screenshot = shot
         var s = shot == nil ? Storage.loadSettings() : AppSettings()
         if shot != nil {
-            s.table.otherPlayers = 1
+            // a full table: three other players (two before you, one after) and two hands
+            s.table.otherPlayers = 3
+            s.spots = 2
             s.dealSpeed = .fast
         }
         settings = s
